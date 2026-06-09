@@ -1,0 +1,6 @@
+# railway.toml - Root project config
+[build]
+  builder = "nixpacks"
+
+[deploy]
+  startCommand = "node server/index.js"
