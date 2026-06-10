@@ -963,12 +963,16 @@ export default function App() {
   const [liveKickoff, setLiveKickoff] = useState(null);
   const [matchStats, setMatchStats] = useState(null);
   const [ballPos, setBallPos] = useState({ side: 1, zone: 1 });
+  const [disconnected, setDisconnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
 
   // Results state
   const [results, setResults] = useState(null);
 
   const socketRef = useRef(null);
   const roomRef = useRef(null);
+  const myNameRef = useRef('');
+  const myCodeRef = useRef('');
   roomRef.current = room;
 
   useEffect(() => {
@@ -980,7 +984,15 @@ export default function App() {
     socket.on('room_created', ({ room }) => { setRoom(room); setScreen('lobby'); setErrorMsg(''); });
     socket.on('room_joined', ({ room }) => { setRoom(room); setScreen('lobby'); setErrorMsg(''); });
     socket.on('room_updated', (room) => setRoom(room));
-    socket.on('player_left', ({ room }) => setRoom(room));
+    socket.on('player_left', ({ name, room: r, disconnected: dc }) => {
+      if (r) setRoom(r);
+      if (name) {
+        setEvents(prev => [...prev, {
+          type: 'commentary', minute: '', score: '',
+          text: dc ? `⚠️ ${name} bağlantısı koptu ama maç devam ediyor.` : `👋 ${name} oyundan ayrıldı.`
+        }]);
+      }
+    });
     socket.on('error_msg', ({ message }) => setErrorMsg(message));
 
     socket.on('draft_started', () => {
@@ -1077,6 +1089,50 @@ export default function App() {
       setScreen('lobby');
     });
 
+    // ── Reconnect system ──────────────────────────────────────────
+    socket.on('disconnect', () => {
+      setDisconnected(true);
+      setReconnecting(true);
+      setTimeout(() => {
+        const code = myCodeRef.current;
+        const name = myNameRef.current;
+        if (!code || !name) { setReconnecting(false); return; }
+        socket.connect();
+        socket.once('connect', () => {
+          socket.emit('reconnect_room', { code, username: name });
+        });
+      }, 2000);
+    });
+
+    socket.on('reconnected', ({ code, myId: newId, room, state, myTeam, currentOptions }) => {
+      setDisconnected(false);
+      setReconnecting(false);
+      setMyId(newId);
+      setRoom(room);
+      roomRef.current = { code, room };
+      if (state === 'drafting') {
+        setMyTeam(myTeam || []);
+        if (currentOptions) setSquadOptions(currentOptions);
+        setScreen('draft');
+      } else if (state === 'simulating') {
+        setScreen('live');
+      } else if (state === 'results') {
+        setScreen('results');
+      } else {
+        setScreen('lobby');
+      }
+    });
+
+    socket.on('player_disconnected', ({ name, playerId }) => {
+      if (playerId !== socket.id) {
+        setEvents(prev => [...prev, { type: 'commentary', minute: '', text: `⚠️ ${name} bağlantısı koptu, yeniden bağlanmayı deniyor...`, score: '' }]);
+      }
+    });
+
+    socket.on('player_reconnected', ({ name }) => {
+      setEvents(prev => [...prev, { type: 'commentary', minute: '', text: `✅ ${name} geri bağlandı!`, score: '' }]);
+    });
+
     return () => socket.disconnect();
   }, []);
 
@@ -1115,6 +1171,30 @@ export default function App() {
   const handlePlayAgain = useCallback(() => {
     socketRef.current?.emit('play_again', { code: roomRef.current?.code });
   }, []);
+
+  if (disconnected || reconnecting) {
+    return (
+      <div className="app">
+        <div className="reconnect-overlay">
+          <div className="reconnect-card">
+            <div className="reconnect-spinner">⚽</div>
+            <h3>Bağlantı koptu</h3>
+            <p>{reconnecting ? 'Yeniden bağlanılıyor...' : 'Bağlantı kesildi.'}</p>
+            {!reconnecting && (
+              <button className="btn-primary" onClick={() => {
+                setReconnecting(true);
+                const code = myCodeRef.current;
+                const name = myNameRef.current;
+                if (code && name) {
+                  socketRef.current?.emit('reconnect_room', { code, username: name });
+                }
+              }}>Tekrar Dene</button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">

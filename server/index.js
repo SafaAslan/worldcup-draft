@@ -802,27 +802,106 @@ io.on('connection', (socket) => {
       const idx = room.players.findIndex(p => p.id === socket.id);
       if (idx === -1) continue;
 
-      const wasActive = room.state === 'drafting' && room.turnIndex === idx;
-      const name = room.players[idx].name;
-      room.players.splice(idx, 1);
+      const player = room.players[idx];
+      const name = player.name;
 
-      if (room.players.length === 0) {
-        clearTimeout(room.turnTimer);
-        clearTimeout(room.formationTimer);
-        delete rooms[code];
-        console.log(`[ROOM] ${code} deleted (empty)`);
-      } else {
-        if (room.host === socket.id) room.host = room.players[0].id;
-        if (room.turnIndex >= room.players.length) room.turnIndex = room.players.length - 1;
-        io.to(code).emit('player_left', { name, room: sanitizeRoom(room) });
-        if (wasActive) {
-          clearTimeout(room.turnTimer);
-          room.turnIndex -= room.turnDirection;
-          startTurn(code);
+      // Mark as disconnected, store reconnect info
+      player.disconnected = true;
+      player.disconnectedAt = Date.now();
+      player.prevSocketId = socket.id;
+
+      io.to(code).emit('player_disconnected', { name, playerId: socket.id });
+      console.log(`[-] ${name} disconnected from ${code} (state: ${room.state})`);
+
+      // Set a 60s timer to remove them if they don't reconnect
+      player.reconnectTimer = setTimeout(() => {
+        const r = rooms[code];
+        if (!r) return;
+        const p = r.players.find(p => p.prevSocketId === socket.id && p.disconnected);
+        if (!p) return;
+        const i = r.players.indexOf(p);
+
+        console.log(`[TIMEOUT] ${name} reconnect timeout, removing from ${code}`);
+        r.players.splice(i, 1);
+
+        if (r.players.length === 0) {
+          clearTimeout(r.turnTimer);
+          clearTimeout(r.formationTimer);
+          delete rooms[code];
+        } else {
+          if (r.host === socket.id) r.host = r.players.find(p => !p.disconnected)?.id || r.players[0].id;
+          io.to(code).emit('player_left', { name, room: sanitizeRoom(r) });
+
+          // If it was their turn during draft, advance
+          if (r.state === 'drafting' && r.turnIndex === i) {
+            clearTimeout(r.turnTimer);
+            r.turnIndex -= r.turnDirection;
+            startTurn(code);
+          }
         }
+      }, 60000);
+
+      // If it was their turn during draft, auto-pick immediately after short grace period
+      if (room.state === 'drafting' && room.turnIndex === idx) {
+        clearTimeout(room.turnTimer);
+        room.turnTimer = setTimeout(() => {
+          const r = rooms[code];
+          if (!r || r.state !== 'drafting') return;
+          const active = r.players[r.turnIndex];
+          if (!active || !active.disconnected) return;
+          const best = autoPick(r, active);
+          if (best) {
+            applyPick(code, active, best.squadKey, best.playerIndex, true);
+          } else {
+            r.turnIndex -= r.turnDirection;
+            startTurn(code);
+          }
+        }, 5000); // 5s grace period before auto-pick
       }
+
       break;
     }
+  });
+
+  // Reconnect handler
+  socket.on('reconnect_room', ({ code, username }) => {
+    const room = rooms[code];
+    if (!room) return socket.emit('error_msg', { message: 'Room not found.' });
+
+    const player = room.players.find(p => p.name === username && p.disconnected);
+    if (!player) return socket.emit('error_msg', { message: 'No disconnected player found with that name.' });
+
+    // Cancel removal timer
+    clearTimeout(player.reconnectTimer);
+
+    // Update socket id
+    const oldId = player.id;
+    player.id = socket.id;
+    player.disconnected = false;
+    player.disconnectedAt = null;
+
+    // Update host if needed
+    if (room.host === oldId) room.host = socket.id;
+
+    socket.join(code);
+
+    // Send full state back
+    socket.emit('reconnected', {
+      code,
+      myId: socket.id,
+      room: sanitizeRoom(room),
+      state: room.state,
+      myTeam: player.team,
+      formation: player.formation,
+      mentality: player.mentality || 'balanced',
+      currentOptions: room.currentOptions || [],
+      turnIndex: room.turnIndex,
+      activePlayerId: room.players[room.turnIndex]?.id,
+      deadline: room.turnDeadline,
+    });
+
+    io.to(code).emit('player_reconnected', { name: player.name, playerId: socket.id });
+    console.log(`[+] ${username} reconnected to ${code} as ${socket.id}`);
   });
 });
 
