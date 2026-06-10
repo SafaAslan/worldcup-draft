@@ -182,8 +182,12 @@ function applyPick(code, player, squadKey, playerIndex, wasAuto = false) {
   if (!picked) return;
   if (!isPickAllowed(player.team, picked.pos)) return;
 
+  // DUPLICATE GUARD: reject if already taken by anyone
+  const takenKey = squadKey + ':' + picked.name;
+  if (room.takenPlayers.has(takenKey)) return;
+
   player.team.push({ ...picked, from: `${squad.country} ${squad.year}` });
-  room.takenPlayers.add(squadKey + ':' + picked.name);
+  room.takenPlayers.add(takenKey);
   clearTimeout(room.turnTimer);
 
   io.to(code).emit('pick_made', {
