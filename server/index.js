@@ -235,6 +235,39 @@ function startFormationPhase(code) {
 
 // ─── Live simulation ─────────────────────────────────────────────────────────
 
+// Commentary templates
+const COMMENTARY = {
+  goal: [
+    (scorer, team) => `⚽ GOL! ${scorer} ağları havalandırıyor! ${team} öne geçiyor!`,
+    (scorer, team) => `⚽ GOOOL! Muhteşem bir bitiriş ${scorer}'dan! ${team} seviniyor!`,
+    (scorer, team) => `⚽ ${scorer} müthiş bir vuruşla gönderdi köşeye! ${team} fark atıyor!`,
+    (scorer, team) => `⚽ ${team} golü buldu! ${scorer} doğru yerde doğru zamanda!`,
+  ],
+  miss: [
+    (shooter, gk) => `😤 ${shooter} tam gol gibi vurdu ama direğe takıldı!`,
+    (shooter, gk) => `🧤 ${gk} harika bir refleksle topu çeldi! Nefes kesen kurtarış!`,
+    (shooter, gk) => `😱 ${shooter} boş kaleyi kaçırdı! İnanamıyoruz!`,
+    (shooter, gk) => `🧤 ${gk} çıkış yaptı ve topu son anda kapıp aldı!`,
+    (shooter, gk) => `📏 ${shooter}'ın şutu direkten döndü, kaleci şanslı!`,
+    (shooter, gk) => `🙅 ${shooter} serbest pozisyonda ama vuruşu üstten aştı!`,
+  ],
+  pressure: [
+    (team) => `🔥 ${team} peş peşe korneler kazanıyor, baskı artıyor!`,
+    (team) => `⚡ ${team} yüksek pres uyguluyor, rakip çıkamıyor!`,
+    (team) => `🎯 ${team} ceza sahasını zorluyor, gol yakın görünüyor!`,
+  ],
+  counter: [
+    (team) => `💨 ${team}'dan tehlikeli bir kontratak! Hız farkı ortaya çıkıyor!`,
+    (team) => `🏃 ${team} savunmadan çıktı ve hızla hücuma geçti!`,
+  ],
+  foul: [
+    (player) => `🟨 ${player}'a sarı kart! Sert müdahale tartışma yarattı.`,
+    (player) => `😤 ${player} sinirlerine hakim olamadı, kart gördü!`,
+  ],
+};
+
+function rnd(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
 function simulateMatch(p1, p2) {
   const s1 = teamStrength(p1) * FORMATIONS[p1.formation].atk;
   const s2 = teamStrength(p2) * FORMATIONS[p2.formation].atk;
@@ -244,30 +277,81 @@ function simulateMatch(p1, p2) {
   const xg1 = Math.max(0.3, (s1 / (85 * d2)) * 1.6);
   const xg2 = Math.max(0.3, (s2 / (85 * d1)) * 1.6);
 
-  const goals = [];
+  const events = []; // all events including commentary
   const attackers = (team) => team.filter(p => ['ATT', 'MID'].includes(POS_GROUP[p.pos]));
+  const defenders = (team) => team.filter(p => POS_GROUP[p.pos] === 'DEF');
+  const gk = (team) => team.find(p => POS_GROUP[p.pos] === 'GK');
   const sc1 = attackers(p1.team);
   const sc2 = attackers(p2.team);
+  const def1 = defenders(p1.team);
+  const def2 = defenders(p2.team);
+  const gk1 = gk(p1.team);
+  const gk2 = gk(p2.team);
 
   const weightedPick = (list) => {
+    if (!list.length) return { name: 'Oyuncu' };
     const pool = list.flatMap(p => Array(Math.ceil(p.rating / 20)).fill(p));
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
-  for (let minute = 4; minute <= 90; minute += 6 + Math.floor(Math.random() * 9)) {
-    if (Math.random() < xg1 / 9) {
-      goals.push({ minute, side: 1, scorer: weightedPick(sc1).name });
+  let minute = 4;
+  while (minute <= 90) {
+    minute += 5 + Math.floor(Math.random() * 10);
+    if (minute > 90) break;
+
+    const side1attacks = Math.random() < xg1 / 9;
+    const side2attacks = Math.random() < xg2 / 9;
+
+    if (side1attacks) {
+      const shooter = weightedPick(sc1);
+      if (Math.random() < 0.45) {
+        // GOAL
+        events.push({ minute, type: 'goal', side: 1, scorer: shooter.name,
+          text: rnd(COMMENTARY.goal)(shooter.name, p1.name) });
+      } else {
+        // MISS or SAVE
+        const gkName = gk2 ? gk2.name : 'kaleci';
+        events.push({ minute, type: 'miss', side: 1,
+          text: rnd(COMMENTARY.miss)(shooter.name, gkName) });
+      }
+    } else if (Math.random() < 0.15) {
+      // Pressure / counter commentary
+      const commentType = Math.random() < 0.5 ? 'pressure' : 'counter';
+      events.push({ minute, type: 'commentary', side: 1,
+        text: rnd(COMMENTARY[commentType])(p1.name) });
     }
-    if (Math.random() < xg2 / 9) {
-      goals.push({ minute: Math.min(90, minute + 2), side: 2, scorer: weightedPick(sc2).name });
+
+    if (side2attacks) {
+      const shooter2 = weightedPick(sc2);
+      const m2 = Math.min(90, minute + 2);
+      if (Math.random() < 0.45) {
+        events.push({ minute: m2, type: 'goal', side: 2, scorer: shooter2.name,
+          text: rnd(COMMENTARY.goal)(shooter2.name, p2.name) });
+      } else {
+        const gkName2 = gk1 ? gk1.name : 'kaleci';
+        events.push({ minute: m2, type: 'miss', side: 2,
+          text: rnd(COMMENTARY.miss)(shooter2.name, gkName2) });
+      }
+    } else if (Math.random() < 0.12) {
+      events.push({ minute, type: 'commentary', side: 2,
+        text: rnd(COMMENTARY.counter)(p2.name) });
+    }
+
+    // Occasional foul
+    if (Math.random() < 0.08) {
+      const allPlayers = [...p1.team, ...p2.team];
+      const fouler = allPlayers[Math.floor(Math.random() * allPlayers.length)];
+      events.push({ minute, type: 'foul', text: rnd(COMMENTARY.foul)(fouler.name) });
     }
   }
 
-  goals.sort((a, b) => a.minute - b.minute);
+  events.sort((a, b) => a.minute - b.minute);
+  const goals = events.filter(e => e.type === 'goal');
   return {
     g1: goals.filter(g => g.side === 1).length,
     g2: goals.filter(g => g.side === 2).length,
-    goals
+    goals,
+    events,
   };
 }
 
@@ -280,28 +364,38 @@ async function streamMatch(code, p1, p2, result, stage = null) {
     stage,
   });
 
-  await sleep(1200);
+  await sleep(1800);
 
   let homeScore = 0, awayScore = 0;
-  for (const goal of result.goals) {
-    await sleep(700 + Math.random() * 800);
-    if (goal.side === 1) homeScore++; else awayScore++;
+  for (const event of result.events) {
+    // Delay between events: goals longer pause, commentary shorter
+    const delay = event.type === 'goal' ? 1800 + Math.random() * 1000
+                : event.type === 'miss' ? 1200 + Math.random() * 800
+                : 900 + Math.random() * 600;
+    await sleep(delay);
+
+    if (event.type === 'goal') {
+      if (event.side === 1) homeScore++; else awayScore++;
+    }
+
     io.to(code).emit('match_event', {
-      minute: goal.minute,
-      scorer: goal.scorer,
-      side: goal.side,
+      minute: event.minute,
+      type: event.type,
+      scorer: event.scorer,
+      side: event.side,
+      text: event.text,
       score: { home: homeScore, away: awayScore },
       stage,
     });
   }
 
-  await sleep(1000);
+  await sleep(1400);
   io.to(code).emit('match_fulltime', {
     home: { id: p1.id, name: p1.name, avatar: p1.avatar, goals: result.g1 },
     away: { id: p2.id, name: p2.name, avatar: p2.avatar, goals: result.g2 },
     stage,
   });
-  await sleep(900);
+  await sleep(1200);
 }
 
 async function startSimulation(code) {

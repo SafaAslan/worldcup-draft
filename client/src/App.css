@@ -543,3 +543,18 @@ body {
   font-size: 13px; margin-right: 2px;
   animation: pulse 1.5s ease-in-out infinite;
 }
+
+/* ── Commentary event types ────────────────────────────────────── */
+.event-row.miss {
+  border-color: rgba(59,130,246,0.3);
+  color: #93c5fd;
+}
+.event-row.commentary {
+  border-color: rgba(107,114,128,0.25);
+  color: var(--muted);
+  font-style: italic;
+}
+.event-row.foul {
+  border-color: rgba(234,179,8,0.3);
+  color: #fde68a;
+}

@@ -422,7 +422,18 @@ function LiveScreen({ liveMatch, events, teams, stageBanner }) {
       <div className="event-feed">
         {events.slice().reverse().map((e, i) => (
           <div key={events.length - i} className={`event-row ${e.type}`}>
-            {e.type === 'goal' && <><span className="event-minute">{e.minute}'</span> ⚽ <strong>{e.scorer}</strong> scores! <span className="event-score">{e.score}</span></>}
+            {e.type === 'goal' && (
+              <><span className="event-minute">{e.minute}'</span> {e.text} <span className="event-score">{e.score}</span></>
+            )}
+            {e.type === 'miss' && (
+              <><span className="event-minute">{e.minute}'</span> {e.text}</>
+            )}
+            {e.type === 'commentary' && (
+              <><span className="event-minute">{e.minute}'</span> {e.text}</>
+            )}
+            {e.type === 'foul' && (
+              <><span className="event-minute">{e.minute}'</span> {e.text}</>
+            )}
             {e.type === 'kickoff' && <>🟢 KICKOFF — {e.text}</>}
             {e.type === 'fulltime' && <>🏁 FULL TIME — <strong>{e.text}</strong></>}
             {e.type === 'stage' && <span className="event-stage">{e.text}</span>}
@@ -631,10 +642,11 @@ export default function App() {
       setEvents(prev => [...prev, { type: 'kickoff', text: `${home.name} vs ${away.name}${stage ? ` (${stage})` : ''}` }]);
     });
 
-    socket.on('match_event', ({ minute, scorer, score, stage }) => {
-      setLiveMatch(prev => prev ? { ...prev, score: score || prev.score } : prev);
-      setEvents(prev => [...prev, {
-        type: 'goal', minute, scorer,
+    socket.on('match_event', ({ minute, type, scorer, side, text, score, stage }) => {
+      if (type === 'goal') {
+        setLiveMatch(prev => prev ? { ...prev, score: score || prev.score } : prev);
+      }
+      setEvents(prev => [...prev, { type, minute, scorer, side, text,
         score: score ? `${score.home}–${score.away}` : ''
       }]);
     });
