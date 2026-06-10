@@ -567,7 +567,7 @@ function LiveScreen({ liveMatch, events, teams, stageBanner, liveStats, matchSta
 
 
 function MatchDetailCard({ match: m }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(true);
   const hasStats = m.stats;
 
   return (
@@ -585,71 +585,56 @@ function MatchDetailCard({ match: m }) {
 
       {open && hasStats && (
         <div className="match-stats-detail">
-          <div className="match-stats-row">
-            <div className="match-stats-col">
-              {m.stats.scorers[0].length > 0 && (
-                <div className="stat-group">
-                  <div className="stat-label">⚽ Goller</div>
-                  {m.stats.scorers[0].map((g, i) => (
-                    <div key={i} className="stat-item">{g.name} <span className="stat-min">{g.minute}'</span></div>
-                  ))}
-                </div>
-              )}
-              {m.stats.yellows[0].length > 0 && (
-                <div className="stat-group">
-                  <div className="stat-label">🟨 Sarı Kart</div>
-                  {m.stats.yellows[0].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
-                </div>
-              )}
-              {m.stats.reds[0].length > 0 && (
-                <div className="stat-group">
-                  <div className="stat-label">🟥 Kırmızı Kart</div>
-                  {m.stats.reds[0].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
-                </div>
-              )}
+          {/* Scorers row */}
+          {(m.stats.scorers[0].length > 0 || m.stats.scorers[1].length > 0) && (
+            <div className="match-scorers-row" style={{marginBottom:'10px'}}>
+              <div className="match-scorers-side">
+                {m.stats.scorers[0].map((g, i) => (
+                  <span key={i} className="scorer-item">⚽ {g.name} {g.minute}'{g.assister ? <small style={{color:'var(--muted)'}}> (ast: {g.assister})</small> : ''}</span>
+                ))}
+              </div>
+              <div className="match-scorers-side right">
+                {m.stats.scorers[1].map((g, i) => (
+                  <span key={i} className="scorer-item">⚽ {g.name} {g.minute}'{g.assister ? <small style={{color:'var(--muted)'}}> (ast: {g.assister})</small> : ''}</span>
+                ))}
+              </div>
             </div>
+          )}
 
-            <div className="match-stats-center">
-              <div className="stat-center-row">
-                <span>{m.stats.shots[0]}</span>
-                <span className="stat-center-label">Şut</span>
-                <span>{m.stats.shots[1]}</span>
-              </div>
-              <div className="stat-center-row">
-                <span>{m.stats.yellows[0].length}</span>
-                <span className="stat-center-label">🟨</span>
-                <span>{m.stats.yellows[1].length}</span>
-              </div>
-              <div className="stat-center-row">
-                <span>{m.stats.reds[0].length}</span>
-                <span className="stat-center-label">🟥</span>
-                <span>{m.stats.reds[1].length}</span>
-              </div>
-            </div>
-
-            <div className="match-stats-col right">
-              {m.stats.scorers[1].length > 0 && (
-                <div className="stat-group">
-                  <div className="stat-label">⚽ Goller</div>
-                  {m.stats.scorers[1].map((g, i) => (
-                    <div key={i} className="stat-item">{g.name} <span className="stat-min">{g.minute}'</span></div>
-                  ))}
-                </div>
-              )}
-              {m.stats.yellows[1].length > 0 && (
-                <div className="stat-group">
-                  <div className="stat-label">🟨 Sarı Kart</div>
-                  {m.stats.yellows[1].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
-                </div>
-              )}
-              {m.stats.reds[1].length > 0 && (
-                <div className="stat-group">
-                  <div className="stat-label">🟥 Kırmızı Kart</div>
-                  {m.stats.reds[1].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
-                </div>
-              )}
-            </div>
+          {/* Stat bars */}
+          <div style={{display:'flex', flexDirection:'column', gap:'6px', marginBottom:'10px'}}>
+            <StatBar label="Şut" val1={m.stats.shots[0]} val2={m.stats.shots[1]} />
+            {m.stats.onTarget && <StatBar label="İsabetli" val1={m.stats.onTarget[0]} val2={m.stats.onTarget[1]} />}
+            {m.stats.passes && <StatBar label="Pas" val1={m.stats.passes[0]} val2={m.stats.passes[1]} />}
+            {m.stats.possession && <StatBar label="Top %" val1={m.stats.possession[0]} val2={m.stats.possession[1]} />}
+            <StatBar label="🟨" val1={m.stats.yellows[0].length} val2={m.stats.yellows[1].length} />
+            {(m.stats.reds[0].length > 0 || m.stats.reds[1].length > 0) && (
+              <StatBar label="🟥" val1={m.stats.reds[0].length} val2={m.stats.reds[1].length} />
+            )}
           </div>
+
+          {/* Cards */}
+          {(m.stats.yellows[0].length > 0 || m.stats.yellows[1].length > 0 || m.stats.reds[0].length > 0 || m.stats.reds[1].length > 0) && (
+            <div className="match-stats-row">
+              <div className="match-stats-col">
+                {m.stats.yellows[0].map((p, i) => <div key={i} className="stat-item">🟨 {p}</div>)}
+                {m.stats.reds[0].map((p, i) => <div key={i} className="stat-item">🟥 {p}</div>)}
+              </div>
+              <div className="match-stats-center" />
+              <div className="match-stats-col right">
+                {m.stats.yellows[1].map((p, i) => <div key={i} className="stat-item">🟨 {p}</div>)}
+                {m.stats.reds[1].map((p, i) => <div key={i} className="stat-item">🟥 {p}</div>)}
+              </div>
+            </div>
+          )}
+
+          {/* MOTM */}
+          {m.stats.motm && (
+            <div className="motm-card" style={{marginTop:'8px'}}>
+              ⭐ <strong>Maçın Adamı:</strong> {m.stats.motm.name}
+              <span className="motm-stats">{m.stats.motm.goals}G {m.stats.motm.assists}A {m.stats.motm.shots}Ş</span>
+            </div>
+          )}
         </div>
       )}
     </div>
