@@ -43,7 +43,7 @@ function generateRoomCode() {
   return code;
 }
 
-function rollSquadOptions(count = 3) {
+function rollSquadOptions(count = 3, takenPlayers = new Set()) {
   const keys = Object.keys(squads);
   const picked = new Set();
   const options = [];
@@ -51,7 +51,12 @@ function rollSquadOptions(count = 3) {
     const key = keys[Math.floor(Math.random() * keys.length)];
     if (!picked.has(key)) {
       picked.add(key);
-      options.push({ key, ...squads[key] });
+      const squad = squads[key];
+      const playersWithStatus = squad.players.map(p => ({
+        ...p,
+        taken: takenPlayers.has(key + ':' + p.name)
+      }));
+      options.push({ key, ...squad, players: playersWithStatus });
     }
   }
   return options;
@@ -141,7 +146,7 @@ function startTurn(code) {
   } while (room.players[room.turnIndex].team.length >= TEAM_SIZE && guard < 100);
 
   const active = room.players[room.turnIndex];
-  room.currentOptions = rollSquadOptions(3);
+  room.currentOptions = rollSquadOptions(3, room.takenPlayers);
   room.turnDeadline = Date.now() + TURN_SECONDS * 1000;
 
   io.to(code).emit('turn_started', {
@@ -152,6 +157,7 @@ function startTurn(code) {
     deadline: room.turnDeadline,
     seconds: TURN_SECONDS,
     progress: draftProgress(room),
+    takenPlayers: Array.from(room.takenPlayers),
   });
 
   clearTimeout(room.turnTimer);
@@ -177,6 +183,7 @@ function applyPick(code, player, squadKey, playerIndex, wasAuto = false) {
   if (!isPickAllowed(player.team, picked.pos)) return;
 
   player.team.push({ ...picked, from: `${squad.country} ${squad.year}` });
+  room.takenPlayers.add(squadKey + ':' + picked.name);
   clearTimeout(room.turnTimer);
 
   io.to(code).emit('pick_made', {
@@ -439,6 +446,7 @@ io.on('connection', (socket) => {
       turnIndex: -1,
       turnDirection: 1,
       currentOptions: [],
+      takenPlayers: new Set(),
       turnTimer: null,
       formationTimer: null,
     };
@@ -511,6 +519,7 @@ io.on('connection', (socket) => {
     const room = rooms[code];
     if (!room || room.host !== socket.id) return;
     room.state = 'lobby';
+    room.takenPlayers = new Set();
     room.players.forEach(p => { p.team = []; p.formation = null; });
     io.to(code).emit('back_to_lobby', { room: sanitizeRoom(room) });
   });

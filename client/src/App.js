@@ -18,6 +18,22 @@ const POS_GROUP = {
   RW: 'ATT', LW: 'ATT', ST: 'ATT', CF: 'ATT'
 };
 
+const POS_ORDER = ['GK','RB','CB','LB','CDM','CM','CAM','RM','LM','RW','LW','ST','CF'];
+
+function sortByPosition(team) {
+  return [...team].sort((a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos));
+}
+
+function getChemistryHint(player, myTeam) {
+  // Count how many from same source the player would add to
+  const counts = {};
+  myTeam.forEach(p => { counts[p.from] = (counts[p.from] || 0) + 1; });
+  const src = player.from || null;
+  if (!src) return false;
+  // If adding this player would bring a source to exactly 3 → new chemistry bonus
+  return counts[src] === 2;
+}
+
 // ─── HOME ─────────────────────────────────────────────────────────────────────
 
 function HomeScreen({ onCreateRoom, onJoinRoom, errorMsg }) {
@@ -151,6 +167,40 @@ function LobbyScreen({ room, myId, onStartDraft, errorMsg }) {
 
 // ─── DRAFT ────────────────────────────────────────────────────────────────────
 
+
+// ─── RIVAL PANEL ─────────────────────────────────────────────────────────────
+function RivalPanel({ player, isActive }) {
+  const [open, setOpen] = React.useState(false);
+  const sorted = sortByPosition(player.team || []);
+  return (
+    <div className={`rival-panel ${isActive ? 'active' : ''}`}>
+      <div className="rival-header" onClick={() => setOpen(o => !o)}>
+        <span>{player.avatar}</span>
+        <span className="other-name">{player.name}</span>
+        <div className="progress-track" style={{flex:1}}>
+          <div className="progress-fill" style={{ width: `${(player.picked / 11) * 100}%` }} />
+        </div>
+        <span className="progress-count">{player.picked}/11</span>
+        <span className="rival-toggle">{open ? '▲' : '▼'}</span>
+      </div>
+      {open && sorted.length > 0 && (
+        <div className="rival-team">
+          {sorted.map((p, i) => (
+            <div key={i} className="rival-player">
+              <span className="slot-pos" style={{ background: POS_COLORS[p.pos], fontSize:'9px', padding:'2px 5px', borderRadius:'3px', color:'#fff', minWidth:'32px', textAlign:'center' }}>{p.pos}</span>
+              <span style={{flex:1, fontSize:'12px', color:'var(--white)'}}>{p.name}</span>
+              <span style={{fontSize:'12px', color:'var(--gold)', fontWeight:700}}>{p.rating}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {open && sorted.length === 0 && (
+        <div className="rival-empty">No picks yet</div>
+      )}
+    </div>
+  );
+}
+
 function Countdown({ deadline }) {
   const [left, setLeft] = useState(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
   useEffect(() => {
@@ -167,7 +217,7 @@ function Countdown({ deadline }) {
   );
 }
 
-function DraftScreen({ myId, turnState, progress, lastPick, draftOrder }) {
+function DraftScreen({ myId, turnState, progress, lastPick, takenPlayers }) {
   const isMyTurn = turnState?.activePlayerId === myId;
   const me = progress.find(p => p.id === myId);
   const myTeam = me?.team || [];
@@ -226,36 +276,25 @@ function DraftScreen({ myId, turnState, progress, lastPick, draftOrder }) {
           )}
 
           <div className="team-slots">
-            {[...Array(11)].map((_, i) => {
-              const player = myTeam[i];
-              return (
-                <div key={i} className={`team-slot ${player ? 'filled' : 'empty'}`}>
-                  {player ? (
-                    <>
-                      <span className="slot-pos" style={{ background: POS_COLORS[player.pos] }}>{player.pos}</span>
-                      <span className="slot-name">{player.name}</span>
-                      <span className="slot-rating">{player.rating}</span>
-                    </>
-                  ) : (
-                    <span className="slot-empty">#{i + 1}</span>
-                  )}
-                </div>
-              );
-            })}
+            {sortByPosition(myTeam).map((player, i) => (
+              <div key={i} className="team-slot filled">
+                <span className="slot-pos" style={{ background: POS_COLORS[player.pos] }}>{player.pos}</span>
+                <span className="slot-name">{player.name}</span>
+                <span className="slot-rating">{player.rating}</span>
+              </div>
+            ))}
+            {[...Array(11 - myTeam.length)].map((_, i) => (
+              <div key={'empty-'+i} className="team-slot empty">
+                <span className="slot-empty">#{myTeam.length + i + 1}</span>
+              </div>
+            ))}
           </div>
 
-          {/* Other players' progress */}
+          {/* Other players' squads - collapsible */}
           <div className="others-progress">
-            <h4>Draft Progress</h4>
-            {progress.map(p => (
-              <div key={p.id} className={`other-row ${p.id === turnState?.activePlayerId ? 'active' : ''}`}>
-                <span>{p.avatar}</span>
-                <span className="other-name">{p.name}</span>
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${(p.picked / 11) * 100}%` }} />
-                </div>
-                <span className="progress-count">{p.picked}/11</span>
-              </div>
+            <h4>All Squads</h4>
+            {progress.filter(p => p.id !== myId).map(p => (
+              <RivalPanel key={p.id} player={p} isActive={p.id === turnState?.activePlayerId} />
             ))}
           </div>
         </div>
@@ -273,16 +312,19 @@ function DraftScreen({ myId, turnState, progress, lastPick, draftOrder }) {
                   </div>
                   <div className="squad-players">
                     {squad.players.map((player, idx) => {
-                      const allowed = canPick(player.pos);
+                      const isTaken = player.taken || takenPlayers?.includes(squad.key + ':' + player.name);
+                      const allowed = !isTaken && canPick(player.pos);
+                      const chemHint = !isTaken && isMyTurn && getChemistryHint({...player, from: squad.country + ' ' + squad.year}, myTeam);
                       return (
                         <button
                           key={idx}
-                          className={`pick-player-btn ${!isMyTurn || !allowed ? 'disabled' : ''}`}
-                          disabled={!isMyTurn || !allowed}
+                          className={`pick-player-btn ${isTaken ? 'taken' : (!isMyTurn || !allowed ? 'disabled' : '')}`}
+                          disabled={!isMyTurn || !allowed || isTaken}
                           onClick={() => window.__pickPlayer?.(squad.key, idx)}
                         >
                           <span className="pick-pos" style={{ background: POS_COLORS[player.pos] }}>{player.pos}</span>
                           <span className="pick-name">{player.name}</span>
+                          {chemHint && <span className="chem-hint">🧪</span>}
                           <span className="pick-rating">{player.rating}</span>
                         </button>
                       );
@@ -513,6 +555,7 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [myId, setMyId] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [takenPlayers, setTakenPlayers] = useState([]);
 
   // Draft state
   const [turnState, setTurnState] = useState(null);
@@ -558,6 +601,7 @@ export default function App() {
     socket.on('turn_started', (data) => {
       setTurnState(data);
       setProgress(data.progress);
+      if (data.takenPlayers) setTakenPlayers(data.takenPlayers);
     });
 
     socket.on('pick_made', (data) => {
@@ -669,6 +713,7 @@ export default function App() {
           turnState={turnState}
           progress={progress}
           lastPick={lastPick}
+          takenPlayers={takenPlayers}
         />
       )}
       {screen === 'formation' && (
