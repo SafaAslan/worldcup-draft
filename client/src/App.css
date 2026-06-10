@@ -667,3 +667,17 @@ body {
   margin-left: auto; color: var(--gold); font-size: 12px; font-weight: 700;
 }
 .event-assist { color: var(--muted); font-size: 11px; margin-left: 4px; }
+
+/* ── Pitch View (FM style) ─────────────────────────────────────── */
+.pitch-container {
+  margin: 12px 0 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.pitch-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}

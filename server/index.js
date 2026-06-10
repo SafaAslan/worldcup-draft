@@ -275,10 +275,20 @@ const COMMENTARY = {
     (team) => `⚡ ${team} 3'e 2 durumda! Harika kontratak fırsatı!`,
   ],
   pass: [
-    (player, team) => `🎯 ${player} 'dan mükemmel bir pas, ${team} organize oluyor.`,
+    (player, team) => `🎯 ${player}'dan mükemmel bir pas, ${team} organize oluyor.`,
     (player, team) => `👟 ${player} topla ilerliyor, ${team} pozisyon alıyor.`,
     (player, team) => `🔄 ${team} kısa paslarla topu dolaştırıyor, sabırlı oyun.`,
     (player, team) => `📍 ${player} topu kaptı ve hızla dağıttı.`,
+    (player, team) => `⚡ ${player} rakip savunmasının arkasına koşuyor!`,
+    (player, team) => `🎪 ${team} sol kanattan atak geliştiriyor, ${player} içe çekiyor.`,
+    (player, team) => `🔁 ${team} sağ kanattan kombinasyon, ${player} ceza sahasına giriyor!`,
+    (player, team) => `📐 ${player} orta alandan harika bir dağıtım yapıyor.`,
+  ],
+  position: [
+    (player, zone) => `🟡 Top ${zone} bölgesinde. ${player} baskı altında.`,
+    (player, zone) => `📍 ${player} topu ${zone}'de tutuyor, bekleme oyunu.`,
+    (player, zone) => `⬆️ Top ${zone}'e taşındı, hücum başlıyor!`,
+    (player, zone) => `⬇️ ${player} topu geri çekiyor, ${zone}'den yeniden inşa.`,
   ],
   foul: [
     (player) => `🟨 ${player}'a sarı kart! Sert müdahale tartışma yarattı.`,
@@ -323,27 +333,50 @@ function simulateMatch(p1, p2) {
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
-  // More frequent events — step 3-7 minutes
+  // Ball position zones: 'defans', 'orta saha', 'hücum bölgesi', 'ceza sahası'
+  const ZONES = ['defans', 'orta saha', 'hücum bölgesi', 'ceza sahası'];
+  let ballSide = Math.random() < 0.5 ? 1 : 2;
+  let ballZone = 1; // 0=defans..3=ceza sahası
+
+  // More frequent events — step 2-5 minutes for 3+ min match
   let minute = 2;
   while (minute <= 90) {
-    minute += 3 + Math.floor(Math.random() * 7);
+    minute += 2 + Math.floor(Math.random() * 5);
     if (minute > 90) break;
 
     const side1attacks = Math.random() < xg1 / 12;
     const side2attacks = Math.random() < xg2 / 12;
 
-    // Pass events (frequent, atmospheric)
-    if (Math.random() < 0.35) {
-      const side = Math.random() < 0.5 ? 1 : 2;
+    // Update ball position
+    if (Math.random() < 0.4) {
+      ballSide = Math.random() < 0.5 ? 1 : 2;
+      ballZone = Math.floor(Math.random() * 4);
+    }
+
+    // Pass / position events (frequent, atmospheric)
+    if (Math.random() < 0.45) {
+      const side = Math.random() < (ballSide === 1 ? 0.65 : 0.35) ? 1 : 2;
       const passer = weightedPick(side === 1 ? mid1 : mid2);
       if (side === 1) passes1 += Math.floor(3 + Math.random() * 5);
       else passes2 += Math.floor(3 + Math.random() * 5);
       if (playerStats[passer.name]) playerStats[passer.name].passes += 3;
-      events.push({ minute, type: 'pass', side,
+      ballSide = side;
+      ballZone = Math.min(3, ballZone + (Math.random() < 0.4 ? 1 : 0));
+      events.push({ minute, type: 'pass', side, ballSide, ballZone,
         text: rnd(COMMENTARY.pass)(passer.name, side === 1 ? p1.name : p2.name) });
+    } else if (Math.random() < 0.25) {
+      // Position commentary
+      const side = ballSide;
+      const zoneName = side === 1
+        ? ['kendi defansında','orta sahada','hücum bölgesinde','rakip ceza sahasında'][ballZone]
+        : ['kendi defansında','orta sahada','hücum bölgesinde','rakip ceza sahasında'][ballZone];
+      const player = weightedPick(side === 1 ? [...sc1,...mid1] : [...sc2,...mid2]);
+      events.push({ minute, type: 'position', side, ballSide, ballZone,
+        text: rnd(COMMENTARY.position)(player.name, zoneName) });
     }
 
     if (side1attacks) {
+      ballSide = 1; ballZone = 2 + Math.floor(Math.random() * 2);
       const shooter = weightedPick(sc1);
       const assister = weightedPick(mid1.filter(p => p.name !== shooter.name));
       passes1 += 2;
@@ -354,19 +387,23 @@ function simulateMatch(p1, p2) {
         if (playerStats[shooter.name]) playerStats[shooter.name].goals++;
         if (playerStats[assister.name]) playerStats[assister.name].assists++;
         events.push({ minute, type: 'goal', side: 1, scorer: shooter.name, assister: assister.name,
+          ballSide: 1, ballZone: 3,
           text: rnd(COMMENTARY.goal)(shooter.name, p1.name) });
+        ballZone = 1; ballSide = 2;
       } else {
         const gkName = gk2 ? gk2.name : 'kaleci';
-        events.push({ minute, type: 'miss', side: 1,
+        events.push({ minute, type: 'miss', side: 1, ballSide: 1, ballZone: 3,
           text: rnd(COMMENTARY.miss)(shooter.name, gkName) });
+        ballZone = 0; ballSide = 2;
       }
     } else if (Math.random() < 0.18) {
       const commentType = Math.random() < 0.55 ? 'pressure' : 'counter';
-      events.push({ minute, type: 'commentary', side: 1,
+      events.push({ minute, type: 'commentary', side: 1, ballSide, ballZone,
         text: rnd(COMMENTARY[commentType])(p1.name) });
     }
 
     if (side2attacks) {
+      ballSide = 2; ballZone = 2 + Math.floor(Math.random() * 2);
       const shooter2 = weightedPick(sc2);
       const assister2 = weightedPick(mid2.filter(p => p.name !== shooter2.name));
       passes2 += 2;
@@ -378,14 +415,17 @@ function simulateMatch(p1, p2) {
         if (playerStats[shooter2.name]) playerStats[shooter2.name].goals++;
         if (playerStats[assister2.name]) playerStats[assister2.name].assists++;
         events.push({ minute: m2, type: 'goal', side: 2, scorer: shooter2.name, assister: assister2.name,
+          ballSide: 2, ballZone: 3,
           text: rnd(COMMENTARY.goal)(shooter2.name, p2.name) });
+        ballZone = 1; ballSide = 1;
       } else {
         const gkName2 = gk1 ? gk1.name : 'kaleci';
-        events.push({ minute: m2, type: 'miss', side: 2,
+        events.push({ minute: m2, type: 'miss', side: 2, ballSide: 2, ballZone: 3,
           text: rnd(COMMENTARY.miss)(shooter2.name, gkName2) });
+        ballZone = 0; ballSide = 1;
       }
     } else if (Math.random() < 0.14) {
-      events.push({ minute, type: 'commentary', side: 2,
+      events.push({ minute, type: 'commentary', side: 2, ballSide, ballZone,
         text: rnd(COMMENTARY.counter)(p2.name) });
     }
 
@@ -463,10 +503,11 @@ async function streamMatch(code, p1, p2, result, stage = null) {
   let liveShots = [0, 0], livePasses = [0, 0];
 
   for (const event of result.events) {
-    const delay = event.type === 'goal' ? 3200 + Math.random() * 1400
-                : event.type === 'miss' ? 2200 + Math.random() * 1000
-                : event.type === 'pass' ? 1600 + Math.random() * 800
-                : 1800 + Math.random() * 800;
+    const delay = event.type === 'goal' ? 5000 + Math.random() * 1500
+                : event.type === 'miss' ? 3500 + Math.random() * 1000
+                : event.type === 'pass' ? 2200 + Math.random() * 800
+                : event.type === 'position' ? 1800 + Math.random() * 600
+                : 2500 + Math.random() * 800;
     await sleep(delay);
 
     if (event.type === 'goal') {
@@ -488,6 +529,8 @@ async function streamMatch(code, p1, p2, result, stage = null) {
       scorer: event.scorer,
       assister: event.assister,
       side: event.side,
+      ballSide: event.ballSide,
+      ballZone: event.ballZone,
       text: event.text,
       score: { home: homeScore, away: awayScore },
       liveStats: { shots: liveShots, passes: livePasses, possession: livePoss },

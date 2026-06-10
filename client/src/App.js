@@ -403,6 +403,182 @@ function FormationScreen({ formations, mentalities, onChoose, onChooseMentality,
 
 // ─── LIVE MATCH ───────────────────────────────────────────────────────────────
 
+
+// ─── PITCH VIEW (FM style) ───────────────────────────────────────────────────
+
+const FORMATION_POSITIONS = {
+  '4-3-3': [
+    { pos: 'GK', x: 8, y: 50 },
+    { pos: 'RB', x: 22, y: 18 }, { pos: 'CB', x: 20, y: 35 }, { pos: 'CB', x: 20, y: 65 }, { pos: 'LB', x: 22, y: 82 },
+    { pos: 'CM', x: 42, y: 28 }, { pos: 'CDM', x: 37, y: 50 }, { pos: 'CM', x: 42, y: 72 },
+    { pos: 'RW', x: 66, y: 14 }, { pos: 'ST', x: 74, y: 50 }, { pos: 'LW', x: 66, y: 86 },
+  ],
+  '4-4-2': [
+    { pos: 'GK', x: 8, y: 50 },
+    { pos: 'RB', x: 22, y: 18 }, { pos: 'CB', x: 20, y: 36 }, { pos: 'CB', x: 20, y: 64 }, { pos: 'LB', x: 22, y: 82 },
+    { pos: 'RM', x: 44, y: 16 }, { pos: 'CM', x: 42, y: 38 }, { pos: 'CM', x: 42, y: 62 }, { pos: 'LM', x: 44, y: 84 },
+    { pos: 'ST', x: 70, y: 38 }, { pos: 'ST', x: 70, y: 62 },
+  ],
+  '5-3-2': [
+    { pos: 'GK', x: 8, y: 50 },
+    { pos: 'RB', x: 18, y: 10 }, { pos: 'CB', x: 20, y: 28 }, { pos: 'CB', x: 20, y: 50 }, { pos: 'CB', x: 20, y: 72 }, { pos: 'LB', x: 18, y: 90 },
+    { pos: 'CM', x: 40, y: 28 }, { pos: 'CDM', x: 36, y: 50 }, { pos: 'CM', x: 40, y: 72 },
+    { pos: 'ST', x: 68, y: 38 }, { pos: 'ST', x: 68, y: 62 },
+  ],
+  'default': [
+    { pos: 'GK', x: 8, y: 50 },
+    { pos: 'DEF', x: 20, y: 25 }, { pos: 'DEF', x: 20, y: 42 }, { pos: 'DEF', x: 20, y: 58 }, { pos: 'DEF', x: 20, y: 75 },
+    { pos: 'MID', x: 40, y: 25 }, { pos: 'MID', x: 40, y: 50 }, { pos: 'MID', x: 40, y: 75 },
+    { pos: 'ATT', x: 65, y: 25 }, { pos: 'ATT', x: 70, y: 50 }, { pos: 'ATT', x: 65, y: 75 },
+  ],
+};
+
+const POS_DOT_COLOR = {
+  GK: '#f59e0b', RB: '#3b82f6', CB: '#3b82f6', LB: '#3b82f6',
+  CDM: '#10b981', CM: '#10b981', CAM: '#10b981', RM: '#10b981', LM: '#10b981',
+  RW: '#ef4444', LW: '#ef4444', ST: '#ef4444', CF: '#ef4444',
+  DEF: '#3b82f6', MID: '#10b981', ATT: '#ef4444',
+};
+
+function getPositions(formation) {
+  return FORMATION_POSITIONS[formation] || FORMATION_POSITIONS['default'];
+}
+
+// Map ballZone to x% on pitch for home(left→right) or away(right→left)
+const BALL_X_BY_ZONE = [12, 32, 62, 82];
+const BALL_Y_OPTIONS = [22, 35, 50, 65, 78];
+
+function PitchView({ ballPos, homeTeam, awayTeam, homeName, awayName, homeAvatar, awayAvatar, homeFormation, awayFormation }) {
+  const [smoothBall, setSmoothBall] = React.useState({ x: 50, y: 50 });
+  const [prevBall, setPrevBall] = React.useState({ x: 50, y: 50 });
+  const [animating, setAnimating] = React.useState(false);
+  const [ballYSeed] = React.useState(Math.random());
+
+  React.useEffect(() => {
+    if (!ballPos) return;
+    const rawX = BALL_X_BY_ZONE[ballPos.zone ?? 1];
+    const bx = ballPos.side === 1 ? rawX : 100 - rawX;
+    const by = BALL_Y_OPTIONS[Math.floor(ballYSeed * BALL_Y_OPTIONS.length)];
+    setPrevBall(smoothBall);
+    setAnimating(true);
+    setSmoothBall({ x: bx, y: by });
+    const t = setTimeout(() => setAnimating(false), 600);
+    return () => clearTimeout(t);
+  }, [ballPos?.side, ballPos?.zone]);
+
+  const W = 320, H = 200;
+  const toSVG = (xPct, yPct) => ({ x: xPct / 100 * W, y: yPct / 100 * H });
+
+  const homePositions = getPositions(homeFormation || '4-4-2');
+  const awayPositions = getPositions(awayFormation || '4-4-2').map(p => ({
+    ...p, x: 100 - p.x, y: 100 - p.y  // mirror for away
+  }));
+
+  const ball = toSVG(smoothBall.x, smoothBall.y);
+  const prevBallSVG = toSVG(prevBall.x, prevBall.y);
+
+  // Which side has ball — highlight their attack third
+  const attackZone = ballPos?.side === 1
+    ? { x: W * 0.55, w: W * 0.45 }
+    : { x: 0, w: W * 0.45 };
+  const isAttacking = ballPos?.zone >= 2;
+
+  return (
+    <div className="pitch-container">
+      <svg viewBox={`0 0 ${W} ${H}`} className="pitch-svg" xmlns="http://www.w3.org/2000/svg">
+        {/* Grass base */}
+        <defs>
+          <linearGradient id="grassGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#15803d" />
+            <stop offset="100%" stopColor="#166534" />
+          </linearGradient>
+        </defs>
+        <rect width={W} height={H} fill="url(#grassGrad)" rx="6" />
+
+        {/* Grass stripes */}
+        {[0,1,2,3,4,5,6,7].map(i => (
+          <rect key={i} x={i * W/8} width={W/16} height={H} fill="rgba(0,0,0,0.04)" />
+        ))}
+
+        {/* Attack zone highlight */}
+        {isAttacking && (
+          <rect x={attackZone.x} y={0} width={attackZone.w} height={H}
+            fill="rgba(245,158,11,0.08)" />
+        )}
+
+        {/* Field lines */}
+        <rect x="6" y="5" width={W-12} height={H-10} rx="3" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" />
+        <line x1={W/2} y1="5" x2={W/2} y2={H-5} stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+        <circle cx={W/2} cy={H/2} r="26" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+        <circle cx={W/2} cy={H/2} r="2" fill="rgba(255,255,255,0.5)" />
+        {/* Penalty areas */}
+        <rect x="6" y={H*0.22} width={W*0.14} height={H*0.56} fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+        <rect x={W-6-W*0.14} y={H*0.22} width={W*0.14} height={H*0.56} fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+        {/* Goal areas */}
+        <rect x="6" y={H*0.36} width={W*0.055} height={H*0.28} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
+        <rect x={W-6-W*0.055} y={H*0.36} width={W*0.055} height={H*0.28} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
+        {/* Goals */}
+        <rect x="2" y={H*0.38} width="4" height={H*0.24} fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth="0.8" />
+        <rect x={W-6} y={H*0.38} width="4" height={H*0.24} fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth="0.8" />
+
+        {/* Ball trail */}
+        {animating && (
+          <line x1={prevBallSVG.x} y1={prevBallSVG.y} x2={ball.x} y2={ball.y}
+            stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeDasharray="3,3" />
+        )}
+
+        {/* Away players (mirrored, blue-ish) */}
+        {awayPositions.map((p, i) => {
+          const sv = toSVG(p.x, p.y);
+          const col = POS_DOT_COLOR[p.pos] || '#6b7280';
+          const pl = awayTeam?.[i];
+          return (
+            <g key={'away'+i}>
+              <circle cx={sv.x} cy={sv.y} r="8" fill="#1e3a8a" stroke="white" strokeWidth="1.2" opacity="0.9" />
+              <circle cx={sv.x} cy={sv.y} r="8" fill="none" stroke={col} strokeWidth="1.5" opacity="0.7" />
+              <text x={sv.x} y={sv.y+3.5} textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">
+                {pl ? pl.name.split(' ').pop().slice(0,6) : p.pos}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Home players (green-ish) */}
+        {homePositions.map((p, i) => {
+          const sv = toSVG(p.x, p.y);
+          const col = POS_DOT_COLOR[p.pos] || '#6b7280';
+          const pl = homeTeam?.[i];
+          return (
+            <g key={'home'+i}>
+              <circle cx={sv.x} cy={sv.y} r="8" fill="#14532d" stroke="white" strokeWidth="1.2" opacity="0.9" />
+              <circle cx={sv.x} cy={sv.y} r="8" fill="none" stroke={col} strokeWidth="1.5" opacity="0.7" />
+              <text x={sv.x} y={sv.y+3.5} textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">
+                {pl ? pl.name.split(' ').pop().slice(0,6) : p.pos}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Ball */}
+        <circle cx={ball.x} cy={ball.y} r="6" fill="white" stroke="#1a1a1a" strokeWidth="1.5"
+          style={{transition: animating ? 'cx 0.5s ease, cy 0.5s ease' : 'none'}} />
+        <circle cx={ball.x} cy={ball.y} r="2.5" fill="#555" />
+
+        {/* Zone label */}
+        <text x={ball.x} y={ball.y - 10} textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.9)" fontWeight="bold">
+          {['DEF','MID','ATK','BOX'][ballPos?.zone ?? 1]}
+        </text>
+
+        {/* Team name tags */}
+        <rect x="8" y="6" width="42" height="12" rx="3" fill="rgba(20,83,45,0.8)" />
+        <text x="29" y="15" textAnchor="middle" fontSize="7" fill="white" fontWeight="bold">{homeAvatar} {homeName?.slice(0,8)}</text>
+        <rect x={W-50} y="6" width="42" height="12" rx="3" fill="rgba(30,58,138,0.8)" />
+        <text x={W-29} y="15" textAnchor="middle" fontSize="7" fill="white" fontWeight="bold">{awayName?.slice(0,8)} {awayAvatar}</text>
+      </svg>
+    </div>
+  );
+}
+
 function StatBar({ label, val1, val2, highlight }) {
   const total = (val1 || 0) + (val2 || 0) || 1;
   const pct1 = Math.round((val1 || 0) / total * 100);
@@ -427,7 +603,7 @@ const MENTALITY_OPTS = [
   { key: 'defensive', icon: '🛡️', label: 'Defansif' },
 ];
 
-function LiveScreen({ liveMatch, events, teams, stageBanner, liveStats, matchStats, myId, onChangeMentality }) {
+function LiveScreen({ liveMatch, events, teams, stageBanner, liveStats, matchStats, ballPos, myId, onChangeMentality }) {
   const [myMentality, setMyMentality] = React.useState('balanced');
   const [showStats, setShowStats] = React.useState(false);
 
@@ -475,6 +651,16 @@ function LiveScreen({ liveMatch, events, teams, stageBanner, liveStats, matchSta
             </div>
           </div>
           {liveMatch.stage && <div className="live-stage">{liveMatch.stage}</div>}
+
+          <PitchView
+            ballPos={ballPos}
+            homeName={liveMatch.home.name}
+            awayName={liveMatch.away.name}
+            homeAvatar={liveMatch.home.avatar}
+            awayAvatar={liveMatch.away.avatar}
+            homeFormation={liveMatch.home.formation}
+            awayFormation={liveMatch.away.formation}
+          />
 
           {liveStats && (
             <div className="live-stats-inline">
@@ -776,6 +962,7 @@ export default function App() {
   const [liveStats, setLiveStats] = useState(null);
   const [liveKickoff, setLiveKickoff] = useState(null);
   const [matchStats, setMatchStats] = useState(null);
+  const [ballPos, setBallPos] = useState({ side: 1, zone: 1 });
 
   // Results state
   const [results, setResults] = useState(null);
@@ -841,18 +1028,22 @@ export default function App() {
       setLiveKickoff({ home, away });
       setLiveStats({ shots: [0,0], passes: [0,0], possession: [50,50] });
       setMatchStats(null);
+      setBallPos({ side: 1, zone: 1 });
       setEvents(prev => [...prev, { type: 'kickoff', text: `${home.name} vs ${away.name}${stage ? ` (${stage})` : ''}` }]);
     });
 
-    socket.on('match_event', ({ minute, type, scorer, assister, side, text, score, liveStats: ls, stage }) => {
+    socket.on('match_event', ({ minute, type, scorer, assister, side, ballSide, ballZone, text, score, liveStats: ls, stage }) => {
       if (type === 'goal') {
         setLiveMatch(prev => prev ? { ...prev, score: score || prev.score } : prev);
       }
       if (ls) setLiveStats(ls);
-      if (type !== 'pass') {
+      if (ballSide !== undefined) setBallPos({ side: ballSide, zone: ballZone ?? 1 });
+      if (type !== 'pass' && type !== 'position') {
         setEvents(prev => [...prev, { type, minute, scorer, assister, side, text,
           score: score ? `${score.home}–${score.away}` : ''
         }]);
+      } else if (type === 'position') {
+        setEvents(prev => [...prev, { type: 'commentary', minute, side, text, score: '' }]);
       }
     });
 
@@ -962,6 +1153,7 @@ export default function App() {
           stageBanner={stageBanner}
           liveStats={liveStats}
           matchStats={matchStats}
+          ballPos={ballPos}
           myId={myId}
           onChangeMentality={handleChangeMentalityLive}
         />
