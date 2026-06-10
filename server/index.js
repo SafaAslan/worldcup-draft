@@ -33,6 +33,12 @@ const FORMATIONS = {
   '5-3-2': { label: '5-3-2 Defensive', atk: 0.88, def: 1.18 },
 };
 
+const MENTALITIES = {
+  'offensive': { label: '⚔️ Ofansif', atkMod: 1.35, defMod: 0.78 },
+  'balanced':  { label: '⚖️ Dengeli', atkMod: 1.0,  defMod: 1.0  },
+  'defensive': { label: '🛡️ Defansif', atkMod: 0.72, defMod: 1.38 },
+};
+
 // ─── Room store ──────────────────────────────────────────────────────────────
 const rooms = {};
 
@@ -223,8 +229,9 @@ function startFormationPhase(code) {
 
   io.to(code).emit('formation_phase', {
     formations: Object.entries(FORMATIONS).map(([key, f]) => ({ key, label: f.label, atk: f.atk, def: f.def })),
+    mentalities: Object.entries(MENTALITIES).map(([key, m]) => ({ key, label: m.label, atkMod: m.atkMod, defMod: m.defMod })),
     teams: draftProgress(room),
-    seconds: 25,
+    seconds: 30,
   });
 
   room.formationTimer = setTimeout(() => {
@@ -269,10 +276,12 @@ const COMMENTARY = {
 function rnd(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function simulateMatch(p1, p2) {
-  const s1 = teamStrength(p1) * FORMATIONS[p1.formation].atk;
-  const s2 = teamStrength(p2) * FORMATIONS[p2.formation].atk;
-  const d1 = FORMATIONS[p1.formation].def;
-  const d2 = FORMATIONS[p2.formation].def;
+  const m1 = MENTALITIES[p1.mentality || 'balanced'];
+  const m2 = MENTALITIES[p2.mentality || 'balanced'];
+  const s1 = teamStrength(p1) * FORMATIONS[p1.formation].atk * m1.atkMod;
+  const s2 = teamStrength(p2) * FORMATIONS[p2.formation].atk * m2.atkMod;
+  const d1 = FORMATIONS[p1.formation].def * m1.defMod;
+  const d2 = FORMATIONS[p2.formation].def * m2.defMod;
 
   const xg1 = Math.max(0.3, (s1 / (85 * d2)) * 1.6);
   const xg2 = Math.max(0.3, (s2 / (85 * d1)) * 1.6);
@@ -337,21 +346,41 @@ function simulateMatch(p1, p2) {
         text: rnd(COMMENTARY.counter)(p2.name) });
     }
 
-    // Occasional foul
-    if (Math.random() < 0.08) {
-      const allPlayers = [...p1.team, ...p2.team];
-      const fouler = allPlayers[Math.floor(Math.random() * allPlayers.length)];
-      events.push({ minute, type: 'foul', text: rnd(COMMENTARY.foul)(fouler.name) });
+    // Occasional foul / card
+    if (Math.random() < 0.12) {
+      const side = Math.random() < 0.5 ? 1 : 2;
+      const team = side === 1 ? p1.team : p2.team;
+      const fouler = team[Math.floor(Math.random() * team.length)];
+      const isRed = Math.random() < 0.06;
+      const cardText = isRed
+        ? `🟥 KIRMIZI KART! ${fouler.name} oyundan çıkarılıyor! Takım 10 kişi kalıyor!`
+        : rnd(COMMENTARY.foul)(fouler.name);
+      events.push({ minute, type: 'foul', side, player: fouler.name, card: isRed ? 'red' : 'yellow', text: cardText });
     }
   }
 
   events.sort((a, b) => a.minute - b.minute);
   const goals = events.filter(e => e.type === 'goal');
+  const shots1 = events.filter(e => (e.type === 'goal' || e.type === 'miss') && e.side === 1).length;
+  const shots2 = events.filter(e => (e.type === 'goal' || e.type === 'miss') && e.side === 2).length;
+  const yellows1 = events.filter(e => e.type === 'foul' && e.side === 1 && e.card === 'yellow').map(e => e.player);
+  const yellows2 = events.filter(e => e.type === 'foul' && e.side === 2 && e.card === 'yellow').map(e => e.player);
+  const reds1 = events.filter(e => e.type === 'foul' && e.side === 1 && e.card === 'red').map(e => e.player);
+  const reds2 = events.filter(e => e.type === 'foul' && e.side === 2 && e.card === 'red').map(e => e.player);
+  const scorers1 = goals.filter(g => g.side === 1).map(g => ({ name: g.scorer, minute: g.minute }));
+  const scorers2 = goals.filter(g => g.side === 2).map(g => ({ name: g.scorer, minute: g.minute }));
+
   return {
-    g1: goals.filter(g => g.side === 1).length,
-    g2: goals.filter(g => g.side === 2).length,
+    g1: scorers1.length,
+    g2: scorers2.length,
     goals,
     events,
+    stats: {
+      shots: [shots1, shots2],
+      yellows: [yellows1, yellows2],
+      reds: [reds1, reds2],
+      scorers: [scorers1, scorers2],
+    }
   };
 }
 
@@ -364,14 +393,13 @@ async function streamMatch(code, p1, p2, result, stage = null) {
     stage,
   });
 
-  await sleep(1800);
+  await sleep(2000);
 
   let homeScore = 0, awayScore = 0;
   for (const event of result.events) {
-    // Delay between events: goals longer pause, commentary shorter
-    const delay = event.type === 'goal' ? 1800 + Math.random() * 1000
-                : event.type === 'miss' ? 1200 + Math.random() * 800
-                : 900 + Math.random() * 600;
+    const delay = event.type === 'goal' ? 2800 + Math.random() * 1200
+                : event.type === 'miss' ? 2000 + Math.random() * 1000
+                : 1400 + Math.random() * 800;
     await sleep(delay);
 
     if (event.type === 'goal') {
@@ -436,8 +464,9 @@ async function startSimulation(code) {
     await streamMatch(code, p1, p2, result);
 
     allMatches.push({
-      player1: { id: p1.id, name: p1.name, goals: result.g1 },
-      player2: { id: p2.id, name: p2.name, goals: result.g2 },
+      player1: { id: p1.id, name: p1.name, avatar: p1.avatar, goals: result.g1 },
+      player2: { id: p2.id, name: p2.name, avatar: p2.avatar, goals: result.g2 },
+      stats: result.stats,
     });
 
     results[p1.id].goalsFor += result.g1; results[p1.id].goalsAgainst += result.g2;
@@ -613,12 +642,24 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('choose_mentality', ({ code, mentality }) => {
+    const room = rooms[code];
+    if (!room || !MENTALITIES[mentality]) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+    player.mentality = mentality;
+    io.to(code).emit('mentality_update', {
+      playerId: socket.id,
+      mentality,
+    });
+  });
+
   socket.on('play_again', ({ code }) => {
     const room = rooms[code];
     if (!room || room.host !== socket.id) return;
     room.state = 'lobby';
     room.takenPlayers = new Set();
-    room.players.forEach(p => { p.team = []; p.formation = null; });
+    room.players.forEach(p => { p.team = []; p.formation = null; p.mentality = 'balanced'; });
     io.to(code).emit('back_to_lobby', { room: sanitizeRoom(room) });
   });
 
@@ -653,7 +694,7 @@ io.on('connection', (socket) => {
 });
 
 function makePlayer(id, name, avatar) {
-  return { id, name, avatar: avatar || '⚽', team: [], formation: null };
+  return { id, name, avatar: avatar || '⚽', team: [], formation: null, mentality: 'balanced' };
 }
 
 function sanitizeRoom(room) {

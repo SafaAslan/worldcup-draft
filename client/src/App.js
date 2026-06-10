@@ -344,14 +344,16 @@ function DraftScreen({ myId, turnState, progress, lastPick, takenPlayers }) {
 
 // ─── FORMATION ────────────────────────────────────────────────────────────────
 
-function FormationScreen({ formations, onChoose, chosen, myId, total }) {
+function FormationScreen({ formations, mentalities, onChoose, onChooseMentality, chosen, mentalityChosen, myId, total }) {
   const myChoice = chosen.find(c => c.id === myId);
+  const myMentality = mentalityChosen[myId] || 'balanced';
 
   return (
     <div className="formation-screen">
-      <h2>⚙️ Choose Your Formation</h2>
-      <p className="formation-hint">Attack boosts goals, defense reduces conceding. 25 seconds to decide!</p>
+      <h2>⚙️ Taktik Seç</h2>
+      <p className="formation-hint">Formasyon ve mentalite seç. 30 saniye sonra otomatik seçilir!</p>
 
+      <div className="tactic-section-label">📐 Formasyon</div>
       <div className="formation-cards">
         {formations.map(f => (
           <button
@@ -362,15 +364,37 @@ function FormationScreen({ formations, onChoose, chosen, myId, total }) {
             <span className="formation-name">{f.key}</span>
             <span className="formation-label">{f.label.replace(f.key + ' ', '')}</span>
             <div className="formation-stats">
-              <span>⚔️ ATK ×{f.atk}</span>
-              <span>🛡️ DEF ×{f.def}</span>
+              <span>⚔️ ×{f.atk}</span>
+              <span>🛡️ ×{f.def}</span>
             </div>
           </button>
         ))}
       </div>
 
+      {mentalities && mentalities.length > 0 && (
+        <>
+          <div className="tactic-section-label" style={{marginTop:'20px'}}>🧠 Mentalite</div>
+          <div className="formation-cards">
+            {mentalities.map(m => (
+              <button
+                key={m.key}
+                className={`formation-card ${myMentality === m.key ? 'selected' : ''}`}
+                onClick={() => onChooseMentality(m.key)}
+              >
+                <span className="formation-name" style={{fontSize:'22px'}}>{m.label.split(' ')[0]}</span>
+                <span className="formation-label">{m.label.split(' ').slice(1).join(' ')}</span>
+                <div className="formation-stats">
+                  <span>⚔️ ×{m.atkMod}</span>
+                  <span>🛡️ ×{m.defMod}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="formation-status">
-        {chosen.length}/{total} players ready
+        {chosen.length}/{total} hazır
         {chosen.map(c => <span key={c.id} className="formation-chip">{c.avatar} {c.formation}</span>)}
       </div>
     </div>
@@ -446,6 +470,97 @@ function LiveScreen({ liveMatch, events, teams, stageBanner }) {
 
 // ─── RESULTS ──────────────────────────────────────────────────────────────────
 
+
+function MatchDetailCard({ match: m }) {
+  const [open, setOpen] = React.useState(false);
+  const hasStats = m.stats;
+
+  return (
+    <div className="match-detail-card">
+      <div className="match-row" style={{cursor: hasStats ? 'pointer' : 'default'}} onClick={() => hasStats && setOpen(o => !o)}>
+        <span className={`match-team ${m.player1.goals > m.player2.goals ? 'winner' : ''}`}>
+          {m.player1.avatar || ''} {m.player1.name}
+        </span>
+        <span className="match-score">{m.player1.goals} – {m.player2.goals}</span>
+        <span className={`match-team right ${m.player2.goals > m.player1.goals ? 'winner' : ''}`}>
+          {m.player2.name} {m.player2.avatar || ''}
+        </span>
+        {hasStats && <span className="expand-toggle">{open ? '▲' : '▼'}</span>}
+      </div>
+
+      {open && hasStats && (
+        <div className="match-stats-detail">
+          <div className="match-stats-row">
+            <div className="match-stats-col">
+              {m.stats.scorers[0].length > 0 && (
+                <div className="stat-group">
+                  <div className="stat-label">⚽ Goller</div>
+                  {m.stats.scorers[0].map((g, i) => (
+                    <div key={i} className="stat-item">{g.name} <span className="stat-min">{g.minute}'</span></div>
+                  ))}
+                </div>
+              )}
+              {m.stats.yellows[0].length > 0 && (
+                <div className="stat-group">
+                  <div className="stat-label">🟨 Sarı Kart</div>
+                  {m.stats.yellows[0].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
+                </div>
+              )}
+              {m.stats.reds[0].length > 0 && (
+                <div className="stat-group">
+                  <div className="stat-label">🟥 Kırmızı Kart</div>
+                  {m.stats.reds[0].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
+                </div>
+              )}
+            </div>
+
+            <div className="match-stats-center">
+              <div className="stat-center-row">
+                <span>{m.stats.shots[0]}</span>
+                <span className="stat-center-label">Şut</span>
+                <span>{m.stats.shots[1]}</span>
+              </div>
+              <div className="stat-center-row">
+                <span>{m.stats.yellows[0].length}</span>
+                <span className="stat-center-label">🟨</span>
+                <span>{m.stats.yellows[1].length}</span>
+              </div>
+              <div className="stat-center-row">
+                <span>{m.stats.reds[0].length}</span>
+                <span className="stat-center-label">🟥</span>
+                <span>{m.stats.reds[1].length}</span>
+              </div>
+            </div>
+
+            <div className="match-stats-col right">
+              {m.stats.scorers[1].length > 0 && (
+                <div className="stat-group">
+                  <div className="stat-label">⚽ Goller</div>
+                  {m.stats.scorers[1].map((g, i) => (
+                    <div key={i} className="stat-item">{g.name} <span className="stat-min">{g.minute}'</span></div>
+                  ))}
+                </div>
+              )}
+              {m.stats.yellows[1].length > 0 && (
+                <div className="stat-group">
+                  <div className="stat-label">🟨 Sarı Kart</div>
+                  {m.stats.yellows[1].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
+                </div>
+              )}
+              {m.stats.reds[1].length > 0 && (
+                <div className="stat-group">
+                  <div className="stat-label">🟥 Kırmızı Kart</div>
+                  {m.stats.reds[1].map((p, i) => <div key={i} className="stat-item">{p}</div>)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResultsScreen({ standings, matches, knockout, championId, teams, room, myId, onPlayAgain }) {
   const [tab, setTab] = useState('standings');
   const champion = teams?.find(t => t.id === championId) || standings.find(s => s.id === championId);
@@ -519,13 +634,7 @@ function ResultsScreen({ standings, matches, knockout, championId, teams, room, 
 
       {tab === 'matches' && (
         <div className="matches-list">
-          {matches.map((m, i) => (
-            <div key={i} className="match-row">
-              <span className={`match-team ${m.player1.goals > m.player2.goals ? 'winner' : ''}`}>{m.player1.name}</span>
-              <span className="match-score">{m.player1.goals} – {m.player2.goals}</span>
-              <span className={`match-team right ${m.player2.goals > m.player1.goals ? 'winner' : ''}`}>{m.player2.name}</span>
-            </div>
-          ))}
+          {matches.map((m, i) => <MatchDetailCard key={i} match={m} />)}
         </div>
       )}
 
@@ -567,6 +676,8 @@ export default function App() {
   const [myId, setMyId] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [takenPlayers, setTakenPlayers] = useState([]);
+  const [mentalities, setMentalities] = useState([]);
+  const [mentalityChosen, setMentalityChosen] = useState({});
 
   // Draft state
   const [turnState, setTurnState] = useState(null);
@@ -620,14 +731,19 @@ export default function App() {
       setProgress(data.progress);
     });
 
-    socket.on('formation_phase', ({ formations, teams }) => {
+    socket.on('formation_phase', ({ formations, mentalities, teams }) => {
       setFormations(formations);
+      if (mentalities) setMentalities(mentalities);
       setFormationChosen([]);
+      setMentalityChosen({});
       setProgress(teams);
       setScreen('formation');
     });
 
     socket.on('formation_update', ({ chosen }) => setFormationChosen(chosen));
+    socket.on('mentality_update', ({ playerId, mentality }) => {
+      setMentalityChosen(prev => ({ ...prev, [playerId]: mentality }));
+    });
 
     socket.on('simulation_starting', ({ teams }) => {
       setSimTeams(teams);
@@ -707,6 +823,10 @@ export default function App() {
     socketRef.current?.emit('choose_formation', { code: roomRef.current?.code, formation });
   }, []);
 
+  const handleChooseMentality = useCallback((mentality) => {
+    socketRef.current?.emit('choose_mentality', { code: roomRef.current?.code, mentality });
+  }, []);
+
   const handlePlayAgain = useCallback(() => {
     socketRef.current?.emit('play_again', { code: roomRef.current?.code });
   }, []);
@@ -731,8 +851,11 @@ export default function App() {
       {screen === 'formation' && (
         <FormationScreen
           formations={formations}
+          mentalities={mentalities}
           onChoose={handleChooseFormation}
+          onChooseMentality={handleChooseMentality}
           chosen={formationChosen}
+          mentalityChosen={mentalityChosen}
           myId={myId}
           total={room?.players?.length || 0}
         />

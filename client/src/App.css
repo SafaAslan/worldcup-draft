@@ -558,3 +558,45 @@ body {
   border-color: rgba(234,179,8,0.3);
   color: #fde68a;
 }
+
+/* ── Tactic section label ──────────────────────────────────────── */
+.tactic-section-label {
+  font-size: 13px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* ── Match detail card ─────────────────────────────────────────── */
+.match-detail-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; margin-bottom: 6px; overflow: hidden;
+}
+.match-detail-card .match-row { border-bottom: none; border-radius: 0; background: none; }
+.expand-toggle { color: var(--muted); font-size: 10px; margin-left: 8px; }
+
+.match-stats-detail {
+  border-top: 1px solid var(--border);
+  padding: 14px 16px;
+  background: var(--card2);
+}
+.match-stats-row {
+  display: grid; grid-template-columns: 1fr 80px 1fr;
+  gap: 12px; align-items: start;
+}
+.match-stats-col { display: flex; flex-direction: column; gap: 10px; }
+.match-stats-col.right { align-items: flex-end; }
+.stat-group { display: flex; flex-direction: column; gap: 3px; }
+.stat-label { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 2px; }
+.stat-item { font-size: 12px; color: var(--text); }
+.stat-min { color: var(--muted); font-size: 11px; }
+
+.match-stats-center {
+  display: flex; flex-direction: column; gap: 8px;
+  align-items: center; justify-content: center;
+}
+.stat-center-row {
+  display: grid; grid-template-columns: 28px 50px 28px;
+  text-align: center; font-size: 13px; font-weight: 700;
+  color: var(--white); align-items: center; gap: 4px;
+}
+.stat-center-label { font-size: 11px; color: var(--muted); font-weight: 400; }
