@@ -403,10 +403,58 @@ function FormationScreen({ formations, mentalities, onChoose, onChooseMentality,
 
 // ─── LIVE MATCH ───────────────────────────────────────────────────────────────
 
-function LiveScreen({ liveMatch, events, teams, stageBanner }) {
+function StatBar({ label, val1, val2, highlight }) {
+  const total = (val1 || 0) + (val2 || 0) || 1;
+  const pct1 = Math.round((val1 || 0) / total * 100);
+  return (
+    <div className="stat-bar-row">
+      <span className="stat-bar-val">{val1 ?? 0}</span>
+      <div className="stat-bar-track">
+        <div className="stat-bar-fill home" style={{ width: pct1 + '%' }} />
+      </div>
+      <span className="stat-bar-label">{label}</span>
+      <div className="stat-bar-track">
+        <div className="stat-bar-fill away" style={{ width: (100 - pct1) + '%' }} />
+      </div>
+      <span className="stat-bar-val">{val2 ?? 0}</span>
+    </div>
+  );
+}
+
+const MENTALITY_OPTS = [
+  { key: 'offensive', icon: '⚔️', label: 'Ofansif' },
+  { key: 'balanced', icon: '⚖️', label: 'Dengeli' },
+  { key: 'defensive', icon: '🛡️', label: 'Defansif' },
+];
+
+function LiveScreen({ liveMatch, events, teams, stageBanner, liveStats, matchStats, myId, onChangeMentality }) {
+  const [myMentality, setMyMentality] = React.useState('balanced');
+  const [showStats, setShowStats] = React.useState(false);
+
+  const handleMentality = (key) => {
+    setMyMentality(key);
+    onChangeMentality(key);
+  };
+
   return (
     <div className="live-screen">
       {stageBanner && <div className="stage-banner">{stageBanner}</div>}
+
+      {/* In-match mentality changer */}
+      {(liveMatch || matchStats) && (
+        <div className="live-mentality-bar">
+          <span className="live-mentality-label">Mentalite:</span>
+          {MENTALITY_OPTS.map(m => (
+            <button
+              key={m.key}
+              className={`live-mentality-btn ${myMentality === m.key ? 'active' : ''}`}
+              onClick={() => handleMentality(m.key)}
+            >
+              {m.icon} {m.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {liveMatch ? (
         <div className="live-match-card">
@@ -415,21 +463,72 @@ function LiveScreen({ liveMatch, events, teams, stageBanner }) {
             <div className="live-team">
               <span className="live-avatar">{liveMatch.home.avatar}</span>
               <span className="live-name">{liveMatch.home.name}</span>
+              {liveMatch.home.formation && <span className="live-formation">{liveMatch.home.formation}</span>}
             </div>
             <div className="live-score">
               {liveMatch.score.home} – {liveMatch.score.away}
             </div>
             <div className="live-team">
+              {liveMatch.away.formation && <span className="live-formation">{liveMatch.away.formation}</span>}
               <span className="live-avatar">{liveMatch.away.avatar}</span>
               <span className="live-name">{liveMatch.away.name}</span>
             </div>
           </div>
           {liveMatch.stage && <div className="live-stage">{liveMatch.stage}</div>}
+
+          {liveStats && (
+            <div className="live-stats-inline">
+              <StatBar label="Şut" val1={liveStats.shots[0]} val2={liveStats.shots[1]} />
+              <StatBar label="Top %" val1={liveStats.possession[0]} val2={liveStats.possession[1]} />
+            </div>
+          )}
+        </div>
+      ) : matchStats ? (
+        <div className="match-result-panel">
+          <div className="match-result-score">
+            <span>{matchStats.home.avatar} {matchStats.home.name}</span>
+            <span className="match-result-num">{matchStats.home.goals} – {matchStats.away.goals}</span>
+            <span>{matchStats.away.name} {matchStats.away.avatar}</span>
+          </div>
+
+          {/* Scorers */}
+          {(matchStats.stats.scorers[0].length > 0 || matchStats.stats.scorers[1].length > 0) && (
+            <div className="match-scorers-row">
+              <div className="match-scorers-side">
+                {matchStats.stats.scorers[0].map((g, i) => (
+                  <span key={i} className="scorer-item">⚽ {g.name} {g.minute}' {g.assister ? <small>(ast: {g.assister})</small> : ''}</span>
+                ))}
+              </div>
+              <div className="match-scorers-side right">
+                {matchStats.stats.scorers[1].map((g, i) => (
+                  <span key={i} className="scorer-item">⚽ {g.name} {g.minute}' {g.assister ? <small>(ast: {g.assister})</small> : ''}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Full stats */}
+          <div className="match-fullstats">
+            <StatBar label="Şut" val1={matchStats.stats.shots[0]} val2={matchStats.stats.shots[1]} />
+            <StatBar label="İsabetli" val1={matchStats.stats.onTarget[0]} val2={matchStats.stats.onTarget[1]} />
+            <StatBar label="Pas" val1={matchStats.stats.passes[0]} val2={matchStats.stats.passes[1]} />
+            <StatBar label="Top %" val1={matchStats.stats.possession[0]} val2={matchStats.stats.possession[1]} />
+            <StatBar label="🟨" val1={matchStats.stats.yellows[0].length} val2={matchStats.stats.yellows[1].length} />
+            <StatBar label="🟥" val1={matchStats.stats.reds[0].length} val2={matchStats.stats.reds[1].length} />
+          </div>
+
+          {/* MOTM */}
+          {matchStats.stats.motm && (
+            <div className="motm-card">
+              ⭐ <strong>Maçın Adamı:</strong> {matchStats.stats.motm.name}
+              <span className="motm-stats">{matchStats.stats.motm.goals}G {matchStats.stats.motm.assists}A {matchStats.stats.motm.shots}Ş</span>
+            </div>
+          )}
         </div>
       ) : (
         <div className="live-match-card">
           <div className="sim-ball">⚽</div>
-          <h3>Tournament kicking off...</h3>
+          <h3>Turnuva başlıyor...</h3>
           {teams && (
             <div className="strength-list">
               {teams.map(t => (
@@ -447,17 +546,13 @@ function LiveScreen({ liveMatch, events, teams, stageBanner }) {
         {events.slice().reverse().map((e, i) => (
           <div key={events.length - i} className={`event-row ${e.type}`}>
             {e.type === 'goal' && (
-              <><span className="event-minute">{e.minute}'</span> {e.text} <span className="event-score">{e.score}</span></>
+              <><span className="event-minute">{e.minute}'</span> {e.text}
+              {e.assister && <span className="event-assist"> (ast: {e.assister})</span>}
+              <span className="event-score">{e.score}</span></>
             )}
-            {e.type === 'miss' && (
-              <><span className="event-minute">{e.minute}'</span> {e.text}</>
-            )}
-            {e.type === 'commentary' && (
-              <><span className="event-minute">{e.minute}'</span> {e.text}</>
-            )}
-            {e.type === 'foul' && (
-              <><span className="event-minute">{e.minute}'</span> {e.text}</>
-            )}
+            {e.type === 'miss' && <><span className="event-minute">{e.minute}'</span> {e.text}</>}
+            {e.type === 'commentary' && <><span className="event-minute">{e.minute}'</span> {e.text}</>}
+            {e.type === 'foul' && <><span className="event-minute">{e.minute}'</span> {e.text}</>}
             {e.type === 'kickoff' && <>🟢 KICKOFF — {e.text}</>}
             {e.type === 'fulltime' && <>🏁 FULL TIME — <strong>{e.text}</strong></>}
             {e.type === 'stage' && <span className="event-stage">{e.text}</span>}
@@ -693,6 +788,9 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [simTeams, setSimTeams] = useState(null);
   const [stageBanner, setStageBanner] = useState(null);
+  const [liveStats, setLiveStats] = useState(null);
+  const [liveKickoff, setLiveKickoff] = useState(null);
+  const [matchStats, setMatchStats] = useState(null);
 
   // Results state
   const [results, setResults] = useState(null);
@@ -755,23 +853,30 @@ export default function App() {
 
     socket.on('match_kickoff', ({ home, away, stage }) => {
       setLiveMatch({ home, away, score: { home: 0, away: 0 }, stage });
+      setLiveKickoff({ home, away });
+      setLiveStats({ shots: [0,0], passes: [0,0], possession: [50,50] });
+      setMatchStats(null);
       setEvents(prev => [...prev, { type: 'kickoff', text: `${home.name} vs ${away.name}${stage ? ` (${stage})` : ''}` }]);
     });
 
-    socket.on('match_event', ({ minute, type, scorer, side, text, score, stage }) => {
+    socket.on('match_event', ({ minute, type, scorer, assister, side, text, score, liveStats: ls, stage }) => {
       if (type === 'goal') {
         setLiveMatch(prev => prev ? { ...prev, score: score || prev.score } : prev);
       }
-      setEvents(prev => [...prev, { type, minute, scorer, side, text,
-        score: score ? `${score.home}–${score.away}` : ''
-      }]);
+      if (ls) setLiveStats(ls);
+      if (type !== 'pass') {
+        setEvents(prev => [...prev, { type, minute, scorer, assister, side, text,
+          score: score ? `${score.home}–${score.away}` : ''
+        }]);
+      }
     });
 
-    socket.on('match_fulltime', ({ home, away, stage }) => {
+    socket.on('match_fulltime', ({ home, away, stats, stage }) => {
       setEvents(prev => [...prev, {
         type: 'fulltime',
         text: `${home.name} ${home.goals} – ${away.goals} ${away.name}${stage ? ` (${stage})` : ''}`
       }]);
+      if (stats) setMatchStats({ home, away, stats });
       setLiveMatch(null);
     });
 
@@ -827,6 +932,10 @@ export default function App() {
     socketRef.current?.emit('choose_mentality', { code: roomRef.current?.code, mentality });
   }, []);
 
+  const handleChangeMentalityLive = useCallback((mentality) => {
+    socketRef.current?.emit('change_mentality_live', { code: roomRef.current?.code, mentality });
+  }, []);
+
   const handlePlayAgain = useCallback(() => {
     socketRef.current?.emit('play_again', { code: roomRef.current?.code });
   }, []);
@@ -861,7 +970,16 @@ export default function App() {
         />
       )}
       {screen === 'live' && (
-        <LiveScreen liveMatch={liveMatch} events={events} teams={simTeams} stageBanner={stageBanner} />
+        <LiveScreen
+          liveMatch={liveMatch}
+          events={events}
+          teams={simTeams}
+          stageBanner={stageBanner}
+          liveStats={liveStats}
+          matchStats={matchStats}
+          myId={myId}
+          onChangeMentality={handleChangeMentalityLive}
+        />
       )}
       {screen === 'results' && results && (
         <ResultsScreen
