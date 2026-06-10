@@ -404,7 +404,7 @@ function FormationScreen({ formations, mentalities, onChoose, onChooseMentality,
 // ─── LIVE MATCH ───────────────────────────────────────────────────────────────
 
 
-// ─── PITCH VIEW (FM style) ───────────────────────────────────────────────────
+// ─── PITCH VIEW (Canvas, FM style, smooth lerp) ──────────────────────────────
 
 const FORMATION_POSITIONS = {
   '4-3-3': [
@@ -434,147 +434,294 @@ const FORMATION_POSITIONS = {
 };
 
 const POS_DOT_COLOR = {
-  GK: '#f59e0b', RB: '#3b82f6', CB: '#3b82f6', LB: '#3b82f6',
-  CDM: '#10b981', CM: '#10b981', CAM: '#10b981', RM: '#10b981', LM: '#10b981',
-  RW: '#ef4444', LW: '#ef4444', ST: '#ef4444', CF: '#ef4444',
-  DEF: '#3b82f6', MID: '#10b981', ATT: '#ef4444',
+  GK: '#f59e0b', RB: '#60a5fa', CB: '#60a5fa', LB: '#60a5fa',
+  CDM: '#34d399', CM: '#34d399', CAM: '#34d399', RM: '#34d399', LM: '#34d399',
+  RW: '#f87171', LW: '#f87171', ST: '#f87171', CF: '#f87171',
+  DEF: '#60a5fa', MID: '#34d399', ATT: '#f87171',
 };
 
-function getPositions(formation) {
-  return FORMATION_POSITIONS[formation] || FORMATION_POSITIONS['default'];
+const BALL_X_BY_ZONE = [14, 34, 64, 83];
+const BALL_Y_OPTS = [20, 32, 42, 50, 58, 68, 80];
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function drawPitch(ctx, W, H) {
+  // Alternating grass stripes
+  const stripeCount = 10;
+  for (let i = 0; i < stripeCount; i++) {
+    ctx.fillStyle = i % 2 === 0 ? '#1a7a3c' : '#1d8a44';
+    ctx.fillRect(i * W / stripeCount, 0, W / stripeCount, H);
+  }
+
+  // Rounded border
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.5;
+  const pad = 6;
+  roundRect(ctx, pad, pad, W - pad*2, H - pad*2, 4);
+  ctx.stroke();
+
+  // Center line
+  ctx.beginPath();
+  ctx.moveTo(W/2, pad);
+  ctx.lineTo(W/2, H - pad);
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Center circle
+  ctx.beginPath();
+  ctx.arc(W/2, H/2, H * 0.14, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Center spot
+  ctx.beginPath();
+  ctx.arc(W/2, H/2, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fill();
+
+  // Penalty areas
+  const paW = W * 0.15, paH = H * 0.55, paY = (H - paH) / 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(pad, paY, paW, paH);
+  ctx.strokeRect(W - pad - paW, paY, paW, paH);
+
+  // Goal areas
+  const gaW = W * 0.06, gaH = H * 0.3, gaY = (H - gaH) / 2;
+  ctx.strokeRect(pad, gaY, gaW, gaH);
+  ctx.strokeRect(W - pad - gaW, gaY, gaW, gaH);
+
+  // Goals (thick white)
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1.5;
+  const goalH = H * 0.2, goalY = (H - goalH) / 2, goalW = 5;
+  ctx.fillRect(0, goalY, goalW, goalH);
+  ctx.strokeRect(0, goalY, goalW, goalH);
+  ctx.fillRect(W - goalW, goalY, goalW, goalH);
+  ctx.strokeRect(W - goalW, goalY, goalW, goalH);
+
+  // Penalty spots
+  ctx.beginPath();
+  ctx.arc(W * 0.12, H/2, 2, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(W * 0.88, H/2, 2, 0, Math.PI * 2);
+  ctx.fill();
 }
 
-// Map ballZone to x% on pitch for home(left→right) or away(right→left)
-const BALL_X_BY_ZONE = [12, 32, 62, 82];
-const BALL_Y_OPTIONS = [22, 35, 50, 65, 78];
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
 
-function PitchView({ ballPos, homeTeam, awayTeam, homeName, awayName, homeAvatar, awayAvatar, homeFormation, awayFormation }) {
-  const [smoothBall, setSmoothBall] = React.useState({ x: 50, y: 50 });
-  const [prevBall, setPrevBall] = React.useState({ x: 50, y: 50 });
-  const [animating, setAnimating] = React.useState(false);
-  const [ballYSeed] = React.useState(Math.random());
+function drawPlayer(ctx, x, y, r, fillColor, borderColor, label, isHome) {
+  // Shadow
+  ctx.beginPath();
+  ctx.arc(x, y + 1.5, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fill();
 
+  // Circle fill
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+
+  // Border ring (position color)
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // White thin outer ring
+  ctx.beginPath();
+  ctx.arc(x, y, r + 0.5, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Name label
+  if (label) {
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.max(5, r * 0.72)}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label.slice(0, 5), x, y + 0.5);
+  }
+}
+
+function drawBall(ctx, x, y, r) {
+  // Glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
+  grd.addColorStop(0, 'rgba(255,230,100,0.5)');
+  grd.addColorStop(1, 'rgba(255,230,100,0)');
+  ctx.beginPath();
+  ctx.arc(x, y, r * 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = grd;
+  ctx.fill();
+
+  // Shadow
+  ctx.beginPath();
+  ctx.arc(x, y + 1.5, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fill();
+
+  // Ball
+  const ballGrd = ctx.createRadialGradient(x - r*0.3, y - r*0.3, r*0.1, x, y, r);
+  ballGrd.addColorStop(0, '#ffffff');
+  ballGrd.addColorStop(0.6, '#eeeeee');
+  ballGrd.addColorStop(1, '#cccccc');
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = ballGrd;
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Pentagon pattern
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.28, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function PitchView({ ballPos, homeName, awayName, homeAvatar, awayAvatar, homeFormation, awayFormation }) {
+  const canvasRef = React.useRef(null);
+  const rafRef = React.useRef(null);
+  const ballRef = React.useRef({ x: 50, y: 50 });   // current animated position (%)
+  const targetRef = React.useRef({ x: 50, y: 50 }); // target position (%)
+  const ballYRef = React.useRef(50);
+
+  // Update target when ballPos changes
   React.useEffect(() => {
     if (!ballPos) return;
-    const rawX = BALL_X_BY_ZONE[ballPos.zone ?? 1];
-    const bx = ballPos.side === 1 ? rawX : 100 - rawX;
-    const by = BALL_Y_OPTIONS[Math.floor(ballYSeed * BALL_Y_OPTIONS.length)];
-    setPrevBall(smoothBall);
-    setAnimating(true);
-    setSmoothBall({ x: bx, y: by });
-    const t = setTimeout(() => setAnimating(false), 600);
-    return () => clearTimeout(t);
+    const rawX = BALL_X_BY_ZONE[Math.min(ballPos.zone ?? 1, 3)];
+    const tx = ballPos.side === 1 ? rawX : 100 - rawX;
+    // Pick a y position based on zone — more varied
+    const yOpts = ballPos.zone === 3
+      ? [35, 42, 50, 58, 65]
+      : [20, 30, 40, 50, 60, 70, 80];
+    const ty = yOpts[Math.floor(Math.random() * yOpts.length)];
+    targetRef.current = { x: tx, y: ty };
+    ballYRef.current = ty;
   }, [ballPos?.side, ballPos?.zone]);
 
-  const W = 320, H = 200;
-  const toSVG = (xPct, yPct) => ({ x: xPct / 100 * W, y: yPct / 100 * H });
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-  const homePositions = getPositions(homeFormation || '4-4-2');
-  const awayPositions = getPositions(awayFormation || '4-4-2').map(p => ({
-    ...p, x: 100 - p.x, y: 100 - p.y  // mirror for away
-  }));
+    const draw = () => {
+      const W = canvas.width;
+      const H = canvas.height;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, W, H);
 
-  const ball = toSVG(smoothBall.x, smoothBall.y);
-  const prevBallSVG = toSVG(prevBall.x, prevBall.y);
+      // Lerp ball toward target (smooth)
+      const speed = 0.045;
+      ballRef.current.x = lerp(ballRef.current.x, targetRef.current.x, speed);
+      ballRef.current.y = lerp(ballRef.current.y, targetRef.current.y, speed);
 
-  // Which side has ball — highlight their attack third
-  const attackZone = ballPos?.side === 1
-    ? { x: W * 0.55, w: W * 0.45 }
-    : { x: 0, w: W * 0.45 };
-  const isAttacking = ballPos?.zone >= 2;
+      // Draw pitch
+      drawPitch(ctx, W, H);
+
+      const toC = (xPct, yPct) => ({ x: xPct / 100 * W, y: yPct / 100 * H });
+      const PR = Math.max(6, W * 0.028); // player radius scales with width
+
+      // Home formation (left→right, dark green)
+      const homePos = FORMATION_POSITIONS[homeFormation] || FORMATION_POSITIONS['default'];
+      homePos.forEach((p, i) => {
+        const { x, y } = toC(p.x, p.y);
+        const col = POS_DOT_COLOR[p.pos] || '#34d399';
+        drawPlayer(ctx, x, y, PR, '#1a5c2a', col, p.pos, true);
+      });
+
+      // Away formation (right→left, mirrored, dark blue)
+      const awayBase = FORMATION_POSITIONS[awayFormation] || FORMATION_POSITIONS['default'];
+      awayBase.forEach((p, i) => {
+        const { x, y } = toC(100 - p.x, 100 - p.y);
+        const col = POS_DOT_COLOR[p.pos] || '#60a5fa';
+        drawPlayer(ctx, x, y, PR, '#1e2d6b', col, p.pos, false);
+      });
+
+      // Ball
+      const bx = ballRef.current.x / 100 * W;
+      const by = ballRef.current.y / 100 * H;
+      const BR = Math.max(5, W * 0.022);
+      drawBall(ctx, bx, by, BR);
+
+      // Zone label above ball
+      ctx.fillStyle = 'rgba(255,255,100,0.95)';
+      ctx.font = `bold ${Math.max(8, W * 0.032)}px Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      const zone = ballPos?.zone ?? 1;
+      ctx.fillText(['DEF','MID','ATK','BOX'][zone], bx, by - BR - 2);
+
+      // Team name strips
+      const stripH = Math.max(14, H * 0.09);
+      const stripY = H - stripH - 2;
+      // Home
+      ctx.fillStyle = 'rgba(10,40,15,0.85)';
+      roundRect(ctx, 4, stripY, W * 0.22, stripH, 4);
+      ctx.fill();
+      ctx.fillStyle = '#4ade80';
+      ctx.font = `bold ${Math.max(7, stripH * 0.55)}px Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((homeAvatar || '') + ' ' + (homeName || '').slice(0,7), W * 0.11, stripY + stripH / 2);
+      // Away
+      ctx.fillStyle = 'rgba(10,15,50,0.85)';
+      roundRect(ctx, W - W * 0.22 - 4, stripY, W * 0.22, stripH, 4);
+      ctx.fill();
+      ctx.fillStyle = '#93c5fd';
+      ctx.textAlign = 'center';
+      ctx.fillText((awayName || '').slice(0,7) + ' ' + (awayAvatar || ''), W - W * 0.11, stripY + stripH / 2);
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [homeFormation, awayFormation, homeName, awayName, homeAvatar, awayAvatar, ballPos]);
+
+  // Resize canvas to container
+  const containerRef = React.useRef(null);
+  React.useEffect(() => {
+    const resize = () => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+      const w = container.clientWidth;
+      const h = Math.round(w * 0.6); // 5:3 aspect
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   return (
-    <div className="pitch-container">
-      <svg viewBox={`0 0 ${W} ${H}`} className="pitch-svg" xmlns="http://www.w3.org/2000/svg">
-        {/* Grass base */}
-        <defs>
-          <linearGradient id="grassGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#15803d" />
-            <stop offset="100%" stopColor="#166534" />
-          </linearGradient>
-        </defs>
-        <rect width={W} height={H} fill="url(#grassGrad)" rx="6" />
-
-        {/* Grass stripes */}
-        {[0,1,2,3,4,5,6,7].map(i => (
-          <rect key={i} x={i * W/8} width={W/16} height={H} fill="rgba(0,0,0,0.04)" />
-        ))}
-
-        {/* Attack zone highlight */}
-        {isAttacking && (
-          <rect x={attackZone.x} y={0} width={attackZone.w} height={H}
-            fill="rgba(245,158,11,0.08)" />
-        )}
-
-        {/* Field lines */}
-        <rect x="6" y="5" width={W-12} height={H-10} rx="3" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" />
-        <line x1={W/2} y1="5" x2={W/2} y2={H-5} stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
-        <circle cx={W/2} cy={H/2} r="26" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
-        <circle cx={W/2} cy={H/2} r="2" fill="rgba(255,255,255,0.5)" />
-        {/* Penalty areas */}
-        <rect x="6" y={H*0.22} width={W*0.14} height={H*0.56} fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
-        <rect x={W-6-W*0.14} y={H*0.22} width={W*0.14} height={H*0.56} fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
-        {/* Goal areas */}
-        <rect x="6" y={H*0.36} width={W*0.055} height={H*0.28} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
-        <rect x={W-6-W*0.055} y={H*0.36} width={W*0.055} height={H*0.28} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
-        {/* Goals */}
-        <rect x="2" y={H*0.38} width="4" height={H*0.24} fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth="0.8" />
-        <rect x={W-6} y={H*0.38} width="4" height={H*0.24} fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth="0.8" />
-
-        {/* Ball trail */}
-        {animating && (
-          <line x1={prevBallSVG.x} y1={prevBallSVG.y} x2={ball.x} y2={ball.y}
-            stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeDasharray="3,3" />
-        )}
-
-        {/* Away players (mirrored, blue-ish) */}
-        {awayPositions.map((p, i) => {
-          const sv = toSVG(p.x, p.y);
-          const col = POS_DOT_COLOR[p.pos] || '#6b7280';
-          const pl = awayTeam?.[i];
-          return (
-            <g key={'away'+i}>
-              <circle cx={sv.x} cy={sv.y} r="8" fill="#1e3a8a" stroke="white" strokeWidth="1.2" opacity="0.9" />
-              <circle cx={sv.x} cy={sv.y} r="8" fill="none" stroke={col} strokeWidth="1.5" opacity="0.7" />
-              <text x={sv.x} y={sv.y+3.5} textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">
-                {pl ? pl.name.split(' ').pop().slice(0,6) : p.pos}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Home players (green-ish) */}
-        {homePositions.map((p, i) => {
-          const sv = toSVG(p.x, p.y);
-          const col = POS_DOT_COLOR[p.pos] || '#6b7280';
-          const pl = homeTeam?.[i];
-          return (
-            <g key={'home'+i}>
-              <circle cx={sv.x} cy={sv.y} r="8" fill="#14532d" stroke="white" strokeWidth="1.2" opacity="0.9" />
-              <circle cx={sv.x} cy={sv.y} r="8" fill="none" stroke={col} strokeWidth="1.5" opacity="0.7" />
-              <text x={sv.x} y={sv.y+3.5} textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">
-                {pl ? pl.name.split(' ').pop().slice(0,6) : p.pos}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Ball */}
-        <circle cx={ball.x} cy={ball.y} r="6" fill="white" stroke="#1a1a1a" strokeWidth="1.5"
-          style={{transition: animating ? 'cx 0.5s ease, cy 0.5s ease' : 'none'}} />
-        <circle cx={ball.x} cy={ball.y} r="2.5" fill="#555" />
-
-        {/* Zone label */}
-        <text x={ball.x} y={ball.y - 10} textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.9)" fontWeight="bold">
-          {['DEF','MID','ATK','BOX'][ballPos?.zone ?? 1]}
-        </text>
-
-        {/* Team name tags */}
-        <rect x="8" y="6" width="42" height="12" rx="3" fill="rgba(20,83,45,0.8)" />
-        <text x="29" y="15" textAnchor="middle" fontSize="7" fill="white" fontWeight="bold">{homeAvatar} {homeName?.slice(0,8)}</text>
-        <rect x={W-50} y="6" width="42" height="12" rx="3" fill="rgba(30,58,138,0.8)" />
-        <text x={W-29} y="15" textAnchor="middle" fontSize="7" fill="white" fontWeight="bold">{awayName?.slice(0,8)} {awayAvatar}</text>
-      </svg>
+    <div ref={containerRef} className="pitch-container">
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', borderRadius: 10 }} />
     </div>
   );
 }
